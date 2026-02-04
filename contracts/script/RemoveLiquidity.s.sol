@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Script, console} from "forge-std/Script.sol";
+import {Script, console2} from "forge-std/Script.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
@@ -47,11 +47,12 @@ contract RemoveLiquidity is Script, IUnlockCallback {
             hooks: IHooks(address(0))
         });
 
-        console.log("=== RemoveLiquidity (Agent Risk Management) ===");
-        console.log("Pool Manager:", address(manager));
-        console.log("Token0:", currency0);
-        console.log("Token1:", currency1);
-        console.log("Removing liquidity in range [", TICK_LOWER, ",", TICK_UPPER, "]");
+        console2.log("=== RemoveLiquidity (Agent Risk Management) ===");
+        console2.log("Pool Manager:", address(manager));
+        console2.log("Token0:", currency0);
+        console2.log("Token1:", currency1);
+        console2.log("Tick range:", TICK_LOWER);
+        console2.log("         to:", TICK_UPPER);
 
         // Trigger unlock callback
         manager.unlock("");
@@ -71,18 +72,18 @@ contract RemoveLiquidity is Script, IUnlockCallback {
 
         (BalanceDelta delta,) = manager.modifyLiquidity(poolKey, params, "");
 
-        console.log("Delta computed - settling...");
+        console2.log("Delta computed - settling...");
 
         // When removing liquidity, we RECEIVE tokens (positive delta = take)
         // delta.amount0() > 0 means we are owed tokens
         if (delta.amount0() > 0) {
             manager.take(poolKey.currency0, owner, uint256(int256(delta.amount0())));
-            console.log("Took token0:", uint256(int256(delta.amount0())));
+            console2.log("Took token0:", uint256(int256(delta.amount0())));
         }
 
         if (delta.amount1() > 0) {
             manager.take(poolKey.currency1, owner, uint256(int256(delta.amount1())));
-            console.log("Took token1:", uint256(int256(delta.amount1())));
+            console2.log("Took token1:", uint256(int256(delta.amount1())));
         }
 
         // If we somehow owe tokens (shouldn't happen on remove), settle them
@@ -96,7 +97,7 @@ contract RemoveLiquidity is Script, IUnlockCallback {
             manager.settle();
         }
 
-        console.log("=== Liquidity removed via agent (risk mitigation) ===");
+        console2.log("=== Liquidity removed via agent (risk mitigation) ===");
 
         return "";
     }

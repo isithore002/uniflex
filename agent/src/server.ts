@@ -5,6 +5,7 @@ import path from "path";
 import { ethers } from "ethers";
 import { getAgentState, runAgentTick, refreshState, AgentState } from "./agent";
 import { addLiquidity, removeLiquidity, getStrategyParams, LiquidityResult } from "./liquidity";
+import { startMevListener, stopMevListener } from "./mev-listener";
 
 // Load environment variables - use absolute path
 const envPath = path.resolve(__dirname, "../../.env");
@@ -247,6 +248,34 @@ app.get("/config", (_, res) => {
   });
 });
 
+/**
+ * GET /mev/stats
+ * Returns MEV protection statistics from SandwichDetectorV2
+ */
+app.get("/mev/stats", async (_, res) => {
+  try {
+    const state = getAgentState();
+    const mevStats = state.mevProtection || {
+      detected: 0,
+      refunded: 0,
+      treasury: "0.0 ETH",
+      avgRefundRate: 0,
+      recentAttacks: []
+    };
+    
+    res.json({
+      success: true,
+      data: mevStats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // SERVER STARTUP
 // ═══════════════════════════════════════════════════════════════
@@ -263,9 +292,22 @@ const server = app.listen(PORT, () => {
   console.log(`     POST /agent/liquidity/add    → Add liquidity (agent-controlled)`);
   console.log(`     POST /agent/liquidity/remove → Remove liquidity (agent-controlled)`);
   console.log(`     GET  /agent/strategy     → View strategy params`);
+  console.log(`     GET  /mev/stats          → MEV protection statistics`);
   console.log(`     GET  /health             → Health check`);
   console.log(`     GET  /config             → Agent configuration`);
   console.log("═".repeat(60));
+
+  // Start MEV protection listener (non-blocking)
+  const detectorAddress = process.env.SANDWICH_DETECTOR_ADDRESS;
+  if (detectorAddress) {
+    const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+    startMevListener(provider, detectorAddress).catch(err => {
+      console.error("MEV listener error:", err.message);
+    });
+  } else {
+    console.log("\n⚠️  SANDWICH_DETECTOR_ADDRESS not set - MEV tracking simulated");
+  }
+
   console.log("\n⏳ Waiting for requests...\n");
 });
 
@@ -276,6 +318,7 @@ server.on('error', (err) => {
 
 process.on('SIGINT', () => {
   console.log('\n👋 Shutting down...');
+  stopMevListener();
   server.close();
   process.exit(0);
 });

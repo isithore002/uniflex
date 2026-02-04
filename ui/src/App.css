@@ -1,4 +1,28 @@
-/* App-level styles - minimal, most styles in Tailwind */
+/* Terminal App Styles */
 #root {
   min-height: 100vh;
+}
+
+/* Custom scrollbar for terminal */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #003300;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #004400;
+}
+
+/* Terminal text selection */
+::selection {
+  background: #00ff00;
+  color: #0a0a0a;
 }

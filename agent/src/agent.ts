@@ -20,6 +20,23 @@ export interface TimelineEntry {
   txHash?: string;
 }
 
+export interface SandwichAttack {
+  attacker: string;
+  victim: string;
+  loss: string;
+  refund: string;
+  timestamp: string;
+  txHash?: string;
+}
+
+export interface SandwichStats {
+  detected: number;
+  refunded: number;
+  treasury: string;
+  avgRefundRate: number;
+  recentAttacks: SandwichAttack[];
+}
+
 export interface AgentState {
   network: string;
   poolManager: string;
@@ -43,6 +60,7 @@ export interface AgentState {
     timestamp: string;
   };
   timeline: TimelineEntry[];
+  mevProtection: SandwichStats;
 }
 
 // Global agent state
@@ -59,11 +77,66 @@ let agentState: AgentState = {
   status: "NOOP",
   isHealthy: true,
   lastTickTimestamp: null,
-  timeline: []
+  timeline: [],
+  mevProtection: {
+    detected: 0,
+    refunded: 0,
+    treasury: "0.0 ETH",
+    avgRefundRate: 30,
+    recentAttacks: []
+  }
 };
 
 // Maximum timeline entries to keep
 const MAX_TIMELINE_ENTRIES = 50;
+const MAX_RECENT_ATTACKS = 10;
+
+// ═══════════════════════════════════════════════════════════════
+// MEV PROTECTION TRACKING
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Records a detected sandwich attack
+ * Called when SandwichDetected event is received
+ */
+export function recordSandwichAttack(attack: {
+  attacker: string;
+  victim: string;
+  loss: string;
+  refund: string;
+  txHash?: string;
+}): void {
+  const entry: SandwichAttack = {
+    ...attack,
+    timestamp: new Date().toISOString()
+  };
+
+  agentState.mevProtection.detected += 1;
+  agentState.mevProtection.recentAttacks.unshift(entry);
+
+  // Keep only recent attacks
+  if (agentState.mevProtection.recentAttacks.length > MAX_RECENT_ATTACKS) {
+    agentState.mevProtection.recentAttacks = 
+      agentState.mevProtection.recentAttacks.slice(0, MAX_RECENT_ATTACKS);
+  }
+
+  console.log(`🥪 Sandwich detected: attacker=${attack.attacker.slice(0, 10)}... victim=${attack.victim.slice(0, 10)}... loss=${attack.loss}`);
+}
+
+/**
+ * Records a successful refund claim
+ */
+export function recordRefund(victim: string, amount: string): void {
+  agentState.mevProtection.refunded += 1;
+  console.log(`💰 Refund claimed: victim=${victim.slice(0, 10)}... amount=${amount}`);
+}
+
+/**
+ * Updates treasury balance
+ */
+export function updateTreasury(balance: string): void {
+  agentState.mevProtection.treasury = balance;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
