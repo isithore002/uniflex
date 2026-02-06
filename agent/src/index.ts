@@ -101,7 +101,7 @@ async function runAgentTick(config: AgentConfig): Promise<void> {
   if (result.actionType === "cross-chain") {
     if (result.bridgeTxHash) {
       console.log(`  ✅ Bridge Transaction: ${result.bridgeTxHash}`);
-      console.log(`  🔗 https://sepolia.etherscan.io/tx/${result.bridgeTxHash}`);
+      console.log(`  🔗 https://sepolia.uniscan.xyz/tx/${result.bridgeTxHash}`);
     } else if (result.txHash?.startsWith("SIMULATED")) {
       console.log(`  🧪 Simulation complete (set EXECUTE_CROSS_CHAIN=true for real tx)`);
     } else if (!result.success) {
@@ -109,7 +109,7 @@ async function runAgentTick(config: AgentConfig): Promise<void> {
     }
   } else if (result.txHash) {
     console.log(`  ✅ Transaction: ${result.txHash}`);
-    console.log(`  🔗 https://sepolia.etherscan.io/tx/${result.txHash}`);
+    console.log(`  🔗 https://sepolia.uniscan.xyz/tx/${result.txHash}`);
   } else if (result.success) {
     console.log("  ✅ No action needed");
   } else {

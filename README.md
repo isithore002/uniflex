@@ -1,47 +1,238 @@
-# UniFlux Monorepo
+# UniFlux - MEV-Protected Liquidity Management with Autonomous Agents
 
-This repository hosts the UniFlux hackathon scaffold with two workspaces:
+🏆 **Uniswap v4 Agentic Finance Hackathon Submission**  
+🌐 **ENS**: `uniflux.eth` → `0xed0081BB40b7Bf64D407Ec25a99475d0BB8ed903`
 
-- `contracts/` — Foundry project for Uniswap v4 pool setup and mock tokens.
-- `agent/` — TypeScript agent loop integrating ethers and LI.FI.
+UniFlux demonstrates **deterministic MEV protection** using autonomous agents that observe, decide, and act on Uniswap v4 pools deployed on Unichain Sepolia.
 
-## Environment Setup
+## 🎯 Key Achievement: Live MEV Sandwich Simulation
 
-1. Copy `.env.example` to `.env` and fill in RPC endpoints and private key:
-   ```bash
-   cp .env.example .env
-   ```
-2. Install dependencies and build each workspace as needed.
+We've executed a **canonical three-transaction sandwich attack** on-chain to demonstrate our MEV detection mechanism:
 
-## 📦 Deployed Contracts (Sepolia)
+✅ **Frontrun** (0xa5458ebe...): Attacker pushes price up  
+✅ **Victim** (0xbd6c7902...): User suffers slippage  
+✅ **Backrun** (0xbce8cf85...): Attacker extracts MEV  
 
-| Contract     | Address                                      |
-|--------------|----------------------------------------------|
-| PoolManager  | 0xD49236Bb296e8935dC302De0cccFDf5EC5413157   |
-| Mock Token A | 0x586c3d4bee371Df96063F045Aee49081Bc2e7cf7   |
-| Mock Token B | 0xB5b2E077521E43647cc75BF10e5285F036C22DBb   |
-| LiquidityHelper | 0x94C7f21225EA17916DD99437869Ac5E90F3CDBf5 |
-| SwapHelper   | 0xB1e1c081D5FB009D8f908b220D902E9F98dfbFE7   |
+**All transactions verifiable on [Unichain Sepolia Explorer](https://sepolia.uniscan.xyz)**
 
-Network: Ethereum Sepolia (Chain ID 11155111)
+📖 **[View Full MEV Demo Documentation →](MEV_SIMULATION_SUMMARY.md)**
 
-## 🔗 Onchain Proof (Sepolia)
+---
+
+## What is UniFlux?
+
+UniFlux is an **agentic liquidity manager** that protects LPs from MEV attacks on Uniswap v4. The agent:
+
+1. **OBSERVES**: Monitors swaps, calculates price movements, detects sandwich patterns
+2. **DECIDES**: Risk escalation algorithm (moving averages + thresholds)
+3. **ACTS**: Removes liquidity, issues alerts, triggers refunds
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  UniFlux Architecture                     │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  Agent (TypeScript)                                      │
+│  ├─ observe.ts   → Poll Swap events                     │
+│  ├─ decide.ts    → Risk calculation                     │
+│  └─ act.ts       → Remove liquidity / Refund            │
+│                                                          │
+│  Smart Contracts (Solidity)                              │
+│  ├─ SandwichDetectorV2   → MEV pattern detection        │
+│  ├─ LiquidityHelper      → Position management          │
+│  └─ SwapHelper           → Swap execution                │
+│                                                          │
+│  UI (React + Vite)                                       │
+│  └─ Real-time dashboard with Uniswap pink theme         │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 18+
+- Foundry (`curl -L https://foundry.paradigm.xyz | bash`)
+- Unichain Sepolia ETH ([faucet](https://www.alchemy.com/faucets/unichain-sepolia))
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/yourusername/uniflex
+cd uniflex/uniflux
+npm install
+```
+
+### 2. Setup Environment
+```bash
+cp .env.example .env
+# Edit .env with your PRIVATE_KEY and RPC_URL
+```
+
+### 3. Deploy Contracts (if needed)
+```bash
+cd contracts
+forge script script/DeployHelpers.s.sol --rpc-url https://sepolia.unichain.org --broadcast
+```
+
+### 4. Start Agent Server
+```bash
+cd ../agent
+npm run dev
+# Server runs on http://localhost:3001
+```
+
+### 5. Launch UI
+```bash
+cd ../ui
+npm run dev
+# UI runs on http://localhost:5173
+```
+
+---
+
+## 📦 Deployed Contracts (Unichain Sepolia)
+
+| Contract | Address | Explorer |
+|----------|---------|----------|
+| **PoolManager** (Official) | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` | [View](https://sepolia.uniscan.xyz/address/0x00B036B58a818B1BC34d502D3fE730Db729e62AC) |
+| **mETH Token** | `0xD49236Bb296e8935dC302De0cccFDf5EC5413157` | [View](https://sepolia.uniscan.xyz/address/0xD49236Bb296e8935dC302De0cccFDf5EC5413157) |
+| **mUSDC Token** | `0x586c3d4bee371Df96063F045Aee49081Bc2e7cf7` | [View](https://sepolia.uniscan.xyz/address/0x586c3d4bee371Df96063F045Aee49081Bc2e7cf7) |
+| **SwapHelper** | `0x26f814373D575bDC074175A686c3Ff197D4e3b07` | [View](https://sepolia.uniscan.xyz/address/0x26f814373D575bDC074175A686c3Ff197D4e3b07) |
+| **LiquidityHelper** | `0x94C7f21225EA17916DD99437869Ac5E90F3CDBf5` | [View](https://sepolia.uniscan.xyz/address/0x94C7f21225EA17916DD99437869Ac5E90F3CDBf5) |
+| **SandwichDetector** | `0x3d65a5E73d43B5D20Afe7484eecC5D1364e3dEd6` | [View](https://sepolia.uniscan.xyz/address/0x3d65a5E73d43B5D20Afe7484eecC5D1364e3dEd6) |
+
+**Network**: Unichain Sepolia (Chain ID 1301)  
+**Pool ID**: `0xbf8ef484167ee2036a7a8a6eef0ae97eb9fd831c2fc06a897ab8d312c813ef0e`
+
+---
+
+## 🔬 MEV Sandwich Simulation
+
+### On-Chain Proof
+
+| Step | TX Hash | Block | Role | Explorer |
+|------|---------|-------|------|----------|
+| 1 | `0xa5458ebe...` | 43458620 | Attacker Frontrun | [View](https://sepolia.uniscan.xyz/tx/0xa5458ebedc6893fff8b704875cfb00862a0f45a95fedd42fa239aa615c3f41a5) |
+| 2 | `0xbd6c7902...` | 43458649 | Victim Swap | [View](https://sepolia.uniscan.xyz/tx/0xbd6c79025e88c35497e832823f27813a8f30f833c00fe1c4ff39d2f73479ec0c) |
+| 3 | `0xbce8cf85...` | 43458676 | Attacker Backrun | [View](https://sepolia.uniscan.xyz/tx/0xbce8cf85b346bd210df9dcf0991f078e8039492d7cc52a1613bc77b3b9768481) |
+
+**Time Window**: 56 blocks (~112 seconds)
+
+### Verification
+
+```powershell
+cd contracts
+.\script\verify-sandwich.ps1
+```
+
+**Expected Output**:
+```
+✅ Same attacker in frontrun & backrun
+✅ Different victim address
+✅ Time window: 56 blocks
+[SUCCESS] Valid sandwich pattern detected!
+```
+
+---
+
+## 🎓 Technical Highlights
+
+### Detection Algorithm
+
+```solidity
+function detectSandwich(
+    address frontrunSwapper, bool frontrunDir,
+    address victimSwapper, bool victimDir,
+    address backrunSwapper, bool backrunDir
+) internal pure returns (bool) {
+    return (
+        frontrunSwapper == backrunSwapper &&   // Same attacker
+        frontrunSwapper != victimSwapper &&    // Different victim
+        frontrunDir == victimDir &&            // Same direction
+        frontrunDir != backrunDir              // Reverse on backrun
+    );
+}
+```
+
+### Loss Calculation (No Oracle)
+
+```solidity
+// Loss = expectedOut - actualOut
+expectedOut = quote(amountIn, priceAtBlockStart);
+actualOut = quote(amountIn, priceWhenExecuted);
+loss = max(0, expectedOut - actualOut);
+```
+
+### Refund Caps (Three-Tier Safety)
+
+```solidity
+refund = min(
+    loss * 30% / 100,     // Cap #1: Insurance model
+    treasury,             // Cap #2: Available funds  
+    0.1 ether             // Cap #3: Per-swap max
+);
+```
+
+---
+
+## 🔗 Onchain Proof
 
 ### Pool Initialization
-- **Tx Hash:** `0xc5ad4ee5af3eef9f573f2fccd98787d29529070b05a98878d159080c1ae902b7`
-- **Block:** 10161484
+- **Tx Hash:** [0xd332fd72...](https://sepolia.uniscan.xyz/tx/0xd332fd720e81350720ad2ae1f7f1164b38ae468b6e6f9cf0ab6108fed13d042f)
+- **Block:** 43422442
 
 ### Liquidity Added
-- **LiquidityHelper Deployment:** `0x0a9eece9d3f1ae7131528e5a53df4d1ac617226f3757929c70ed54969e7c7859`
-- **Token Approvals:** `0x710d26e26d5b1faa338c658d9477a2129c050a7e2d0cec186084f599a9b5d6f5`
-- **AddLiquidity Tx:** `0xbdd4a60a2fc31630ab6a23b8c017aec962a3a1cb546af16f2cc2a603a4dbe8d0`
-- **Block:** 10161484
+- **Tx Hash:** [0xb4f93ca0...](https://sepolia.uniscan.xyz/tx/0xb4f93ca003f358c391bc1e303c362dd075027b6d903d2f9cebb4165dddabe5ea)
+- **Amount:** 1 ETH each (mETH + mUSDC)
 
-### Swap Executed
-- **SwapHelper Deployment:** `0xa1f0661e5e4f3f0cacf7894eaf54b136db661f4e61e0db272db34bf834cb3626`
-- **Swap Tx:** `0xf4a10e8b86f737dff12c354ab1d4dc02f5b16a1fc41c15267dd9ece0cb80158f`
-- **Block:** 10161488
+### Test Swap
+- **Tx Hash:** [0x8efb8b22...](https://sepolia.uniscan.xyz/tx/0x8efb8b22ecc09943a976f8101ceb1e6c8ea70b873877dc73ac0c45bd0a6b8296)
+- **Amount:** 0.1 mUSDC → 0.0906 mETH
+- **Tick Change:** -1901 (price moved)
 
-**Explorer Links:**
-- [AddLiquidity Tx](https://sepolia.etherscan.io/tx/0xbdd4a60a2fc31630ab6a23b8c017aec962a3a1cb546af16f2cc2a603a4dbe8d0)
-- [Swap Tx](https://sepolia.etherscan.io/tx/0xf4a10e8b86f737dff12c354ab1d4dc02f5b16a1fc41c15267dd9ece0cb80158f)
+---
+## 📚 Documentation
+
+- **[MEV Simulation Summary](MEV_SIMULATION_SUMMARY.md)** - Quick overview of sandwich demo
+- **[MEV Demo Documentation](MEV_DEMO_DOCUMENTATION.md)** - Full technical details for judges
+- **[Sandwich Detector Results](SANDWICH_DETECTOR_RESULTS.md)** - Analysis of detection mechanism
+
+## 🛠️ Scripts & Tools
+
+### MEV Simulation
+```powershell
+# Setup attacker wallet
+cd contracts
+.\script\setup-attacker.ps1
+
+# Run sandwich simulation
+.\script\run-sandwich-simulation.ps1
+
+# Verify sandwich pattern
+.\script\verify-sandwich.ps1
+```
+
+### Agent Operations
+```bash
+# Start agent server
+cd agent
+npm run dev
+
+# Check MEV stats
+curl http://localhost:3001/api/status
+```
+
+## 🏆 Hackathon Highlights
+
+**Why UniFlux Stands Out**:
+1. ✅ **Real On-Chain Proof**: 3 MEV transactions on Unichain Sepolia
+2. ✅ **Autonomous Agent**: OBSERVE-DECIDE-ACT with risk escalation
+3. ✅ **Novel Protection**: Deterministic MEV detection + bounded refunds
+4. ✅ **Judge-Defensible**: Industry-standard sandwich simulation
+5. ✅ **Production-Ready**: Modular, upgradeable, safe architecture
+
+**Built for Uniswap v4 Agentic Finance Hackathon**  
+**Network**: Unichain Sepolia (Chain ID 1301)  
+**Status**: ✅ Complete - MEV simulation on-chain

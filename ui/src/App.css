@@ -1,28 +1,28 @@
-/* Terminal App Styles */
+/* UniFlux App Styles - Uniswap Theme */
 #root {
   min-height: 100vh;
 }
 
-/* Custom scrollbar for terminal */
+/* Custom scrollbar - Uniswap style */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: #131313;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #003300;
+  background: #2D2D2D;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #004400;
+  background: #FF007A;
 }
 
-/* Terminal text selection */
+/* Text selection */
 ::selection {
-  background: #00ff00;
-  color: #0a0a0a;
+  background: #FF007A;
+  color: #FFFFFF;
 }

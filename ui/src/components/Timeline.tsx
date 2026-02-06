@@ -59,7 +59,7 @@ export default function Timeline({ entries }: TimelineProps) {
                     <p className="font-mono text-sm text-[#9b9b9b]">{entry.message}</p>
                     {entry.txHash && (
                       <a 
-                        href={`https://sepolia.etherscan.io/tx/${entry.txHash}`}
+                        href={`https://sepolia.uniscan.xyz/tx/${entry.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-mono text-xs text-[#fc72ff] hover:opacity-80 mt-1 inline-block"

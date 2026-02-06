@@ -1,4 +1,8 @@
 import { ethers } from 'ethers';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function main() {
   const provider = new ethers.JsonRpcProvider('https://sepolia.unichain.org');
@@ -12,6 +16,21 @@ async function main() {
   const balance = await provider.getBalance(wallet);
   console.log('Wallet:', wallet);
   console.log('Unichain Sepolia ETH:', ethers.formatEther(balance));
+  
+  // Check token balances
+  const ERC20_ABI = ['function balanceOf(address) view returns (uint256)', 'function symbol() view returns (string)'];
+  
+  const tokenA = process.env.TOKEN_A_ADDRESS;
+  const tokenB = process.env.TOKEN_B_ADDRESS;
+  
+  if (tokenA && tokenB) {
+    const mETH = new ethers.Contract(tokenA, ERC20_ABI, provider);
+    const mUSDC = new ethers.Contract(tokenB, ERC20_ABI, provider);
+    
+    console.log('\n--- Token Balances ---');
+    console.log('mETH:', ethers.formatEther(await mETH.balanceOf(wallet)));
+    console.log('mUSDC:', ethers.formatEther(await mUSDC.balanceOf(wallet)));
+  }
   
   if (balance === 0n) {
     console.log('\n⚠️  You need Unichain Sepolia ETH for gas!');

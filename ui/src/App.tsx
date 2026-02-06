@@ -22,7 +22,7 @@ function renderLineWithLinks(line: string): React.ReactNode {
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="text-[#00ffff] underline hover:text-[#00ff00] cursor-pointer"
+          className="text-[#FC72FF] underline hover:text-[#FF007A] cursor-pointer"
         >
           {part}
         </a>
@@ -69,25 +69,25 @@ function App() {
     const bootSequence = async () => {
       setTerminalOutput([
         '',
-        '╔══════════════════════════════════════════════════════════════════╗',
-        '║                                                                  ║',
-        '║   ██╗   ██╗███╗   ██╗██╗███████╗██╗     ██╗   ██╗██╗  ██╗       ║',
-        '║   ██║   ██║████╗  ██║██║██╔════╝██║     ██║   ██║╚██╗██╔╝       ║',
-        '║   ██║   ██║██╔██╗ ██║██║█████╗  ██║     ██║   ██║ ╚███╔╝        ║',
-        '║   ██║   ██║██║╚██╗██║██║██╔══╝  ██║     ██║   ██║ ██╔██╗        ║',
-        '║   ╚██████╔╝██║ ╚████║██║██║     ███████╗╚██████╔╝██╔╝ ██╗       ║',
-        '║    ╚═════╝ ╚═╝  ╚═══╝╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝       ║',
-        '║                                                                  ║',
-        '║         Deterministic Liquidity Rebalancing Agent v1.0          ║',
-        '║                      Uniswap v4 · Sepolia                        ║',
-        '╚══════════════════════════════════════════════════════════════════╝',
+        '┌──────────────────────────────────────────────────────────────────┐',
+        '│                                                                  │',
+        '│   ██╗   ██╗███╗   ██╗██╗███████╗██╗     ██╗   ██╗██╗  ██╗       │',
+        '│   ██║   ██║████╗  ██║██║██╔════╝██║     ██║   ██║╚██╗██╔╝       │',
+        '│   ██║   ██║██╔██╗ ██║██║█████╗  ██║     ██║   ██║ ╚███╔╝        │',
+        '│   ██║   ██║██║╚██╗██║██║██╔══╝  ██║     ██║   ██║ ██╔██╗        │',
+        '│   ╚██████╔╝██║ ╚████║██║██║     ███████╗╚██████╔╝██╔╝ ██╗       │',
+        '│    ╚═════╝ ╚═╝  ╚═══╝╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝       │',
+        '│                                                                  │',
+        '│         Deterministic Liquidity Rebalancing Agent v1.0          │',
+        '│                   Uniswap v4 · Unichain Sepolia                  │',
+        '└──────────────────────────────────────────────────────────────────┘',
         '',
         '[BOOT] Initializing UniFlux Agent Terminal...',
         '[BOOT] Loading kernel modules...',
       ])
 
       await new Promise(r => setTimeout(r, 500))
-      addOutput('[BOOT] Connecting to Sepolia RPC...')
+      addOutput('[BOOT] Connecting to Unichain Sepolia RPC...')
       
       const healthy = await checkAgentHealth()
       
@@ -223,7 +223,7 @@ function App() {
           // Add transaction hash if an action was taken
           if (newState.lastAction?.txHash) {
             tickOutput.push(`         TX Hash: ${newState.lastAction.txHash}`)
-            tickOutput.push(`         View: https://sepolia.etherscan.io/tx/${newState.lastAction.txHash}`)
+            tickOutput.push(`         View: https://sepolia.uniscan.xyz/tx/${newState.lastAction.txHash}`)
           }
           
           // Add timeline if there are entries
@@ -259,7 +259,7 @@ function App() {
             addOutput(`[${ts}] ${phase} │ ${entry.message}`)
             if (entry.txHash) {
               addOutput(`           │ TX: ${entry.txHash}`)
-              addOutput(`           │ https://sepolia.etherscan.io/tx/${entry.txHash}`)
+                addOutput(`           │ https://sepolia.uniscan.xyz/tx/${entry.txHash}`)
             }
           })
           addOutput(['────────────────────────────────────────────────────────────────', ''])
@@ -310,8 +310,8 @@ function App() {
             '│  Address:                                                    │',
             `│  ${state.poolManager}`,
             '│                                                              │',
-            '│  View on Etherscan:                                          │',
-            `│  https://sepolia.etherscan.io/address/${state.poolManager}`,
+            '│  View on Uniscan:                                            │',
+            `│  https://sepolia.uniscan.xyz/address/${state.poolManager}`,
             '├───────────────────────────────────────────────────────────────┤',
             '│  Pool Tokens:  mETH / mUSDC                                  │',
             '│  Fee Tier:     3000 (0.3%)                                   │',
@@ -334,7 +334,7 @@ function App() {
           const addOutputLines = ['[  OK  ] Liquidity added successfully']
           if (addResult.txHash) {
             addOutputLines.push(`         TX Hash: ${addResult.txHash}`)
-            addOutputLines.push(`         View: https://sepolia.etherscan.io/tx/${addResult.txHash}`)
+            addOutputLines.push(`         View: https://sepolia.uniscan.xyz/tx/${addResult.txHash}`)
           }
           addOutputLines.push('')
           addOutput(addOutputLines)
@@ -356,7 +356,7 @@ function App() {
           const removeOutputLines = ['[  OK  ] Liquidity removed successfully']
           if (removeResult.txHash) {
             removeOutputLines.push(`         TX Hash: ${removeResult.txHash}`)
-            removeOutputLines.push(`         View: https://sepolia.etherscan.io/tx/${removeResult.txHash}`)
+            removeOutputLines.push(`         View: https://sepolia.uniscan.xyz/tx/${removeResult.txHash}`)
           }
           removeOutputLines.push('')
           addOutput(removeOutputLines)
@@ -379,11 +379,11 @@ function App() {
             '├───────────────────────────────────────────────────────────────┤',
             '│  Pool Manager:                                               │',
             `│  ${state.poolManager.padEnd(60)}│`,
-            `│  https://sepolia.etherscan.io/address/${state.poolManager}`,
+            `│  https://sepolia.uniscan.xyz/address/${state.poolManager}`,
             '├───────────────────────────────────────────────────────────────┤',
             '│  Agent Wallet:                                               │',
             `│  ${state.agentWallet.padEnd(60)}│`,
-            `│  https://sepolia.etherscan.io/address/${state.agentWallet}`,
+            `│  https://sepolia.uniscan.xyz/address/${state.agentWallet}`,
             '└───────────────────────────────────────────────────────────────┘',
             ''
           ])
@@ -421,21 +421,21 @@ function App() {
 
   return (
     <div 
-      className="min-h-screen bg-[#0a0a0a] p-4 font-mono text-[#00ff00]"
+      className="min-h-screen bg-[#131313] p-4 font-mono text-white"
       onClick={focusInput}
     >
       {/* Terminal Window */}
       <div className="max-w-4xl mx-auto">
         {/* Title Bar */}
-        <div className="bg-[#1a1a1a] border border-[#003300] rounded-t-lg px-4 py-2 flex items-center justify-between">
+        <div className="bg-[#1B1B1B] border border-[#2D2D2D] rounded-t-2xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-[#ff5f57]"></div>
             <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
             <div className="w-3 h-3 rounded-full bg-[#28ca42]"></div>
           </div>
-          <span className="text-[#00aa00] text-sm">uniflux@sepolia — agent-terminal</span>
+          <span className="text-[#9B9B9B] text-sm font-sans">UniFlux Agent — Unichain Sepolia</span>
           <div className="flex items-center gap-2 text-xs">
-            <span className={`${isLive ? 'text-[#00ff00]' : 'text-[#ff3333]'}`}>
+            <span className={`font-semibold ${isLive ? 'text-[#21C95E]' : 'text-[#FF4D4D]'}`}>
               {isLive ? '● LIVE' : '○ OFFLINE'}
             </span>
           </div>
@@ -444,18 +444,18 @@ function App() {
         {/* Terminal Body */}
         <div 
           ref={terminalRef}
-          className="bg-[#0a0a0a] border-x border-b border-[#003300] rounded-b-lg p-4 h-[80vh] overflow-y-auto font-mono text-sm"
+          className="bg-[#191919] border-x border-b border-[#2D2D2D] rounded-b-2xl p-4 h-[80vh] overflow-y-auto font-mono text-sm"
         >
           {/* Output */}
           {terminalOutput.map((line, i) => (
             <div 
               key={i} 
               className={`whitespace-pre ${
-                line.includes('[  OK  ]') ? 'text-[#00ff00]' :
-                line.includes('[FAILED]') || line.includes('[ERROR]') ? 'text-[#ff3333]' :
-                line.includes('[BOOT]') || line.includes('[INFO]') || line.includes('[....]') ? 'text-[#00aaaa]' :
-                line.includes('│') || line.includes('─') || line.includes('┌') || line.includes('└') || line.includes('┐') || line.includes('┘') || line.includes('├') || line.includes('┤') || line.includes('╔') || line.includes('╚') || line.includes('╗') || line.includes('╝') || line.includes('║') || line.includes('═') ? 'text-[#00aa00]' :
-                'text-[#00ff00]'
+                line.includes('[  OK  ]') ? 'text-[#21C95E]' :
+                line.includes('[FAILED]') || line.includes('[ERROR]') ? 'text-[#FF4D4D]' :
+                line.includes('[BOOT]') || line.includes('[INFO]') || line.includes('[....]') ? 'text-[#FC72FF]' :
+                line.includes('│') || line.includes('─') || line.includes('┌') || line.includes('└') || line.includes('┐') || line.includes('┘') || line.includes('├') || line.includes('┤') || line.includes('╔') || line.includes('╚') || line.includes('╗') || line.includes('╝') || line.includes('║') || line.includes('═') ? 'text-[#FF007A]' :
+                'text-[#FFFFFF]'
               }`}
             >
               {renderLineWithLinks(line)}
@@ -465,9 +465,9 @@ function App() {
           {/* Input Line */}
           {!loading && (
             <div className="flex items-center mt-1">
-              <span className="text-[#00aaaa]">uniflux@sepolia:~$</span>
-              <span className="ml-2">{currentCommand}</span>
-              <span className="cursor-blink ml-0.5 w-2 h-4 bg-[#00ff00] inline-block"></span>
+              <span className="text-[#FF007A]">uniflux@sepolia:~$</span>
+              <span className="ml-2 text-white">{currentCommand}</span>
+              <span className="cursor-blink ml-0.5 w-2 h-4 bg-[#FF007A] inline-block"></span>
               <input
                 ref={inputRef}
                 type="text"
@@ -482,15 +482,15 @@ function App() {
 
           {/* Loading indicator */}
           {loading && (
-            <div className="flex items-center text-[#00aaaa]">
+            <div className="flex items-center text-[#FC72FF]">
               <span className="cursor-blink">_</span>
             </div>
           )}
         </div>
 
         {/* Status Bar */}
-        <div className="bg-[#0f0f0f] border border-t-0 border-[#003300] px-4 py-1 text-xs text-[#006600] flex justify-between">
-          <span>ENS: uniflux.eth | Network: Sepolia</span>
+        <div className="bg-[#1B1B1B] border border-t-0 border-[#2D2D2D] rounded-b-lg px-4 py-2 text-xs text-[#9B9B9B] flex justify-between">
+          <span>ENS: uniflux.eth | Network: Unichain Sepolia</span>
           <span>
             {state ? `Deviation: ${state.deviation?.toFixed(2)}% | Status: ${state.status}` : 'Connecting...'}
           </span>

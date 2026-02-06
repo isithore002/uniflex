@@ -10,4 +10,5 @@ evm_version = "cancun"
 
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"
+unichain_sepolia = "https://sepolia.unichain.org"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"

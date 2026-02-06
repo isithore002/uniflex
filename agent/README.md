@@ -208,12 +208,12 @@ This agent qualifies for:
 | 🥈 AI x LI.FI Smart App | ✅ Cross-chain via LI.FI |
 | 🥉 Best LI.FI-Powered DeFi | ✅ Liquidity evacuation |
 
-### On-Chain Proof (Sepolia)
+### On-Chain Proof (Unichain Sepolia)
 
 | Action | Transaction |
 |--------|-------------|
-| Add Liquidity | [`0xbdd4a60a...`](https://sepolia.etherscan.io/tx/0xbdd4a60a2fc31630ab6a23b8c017aec962a3a1cb546af16f2cc2a603a4dbe8d0) |
-| Swap Tokens | [`0xf4a10e8b...`](https://sepolia.etherscan.io/tx/0xf4a10e8b86f737dff12c354ab1d4dc02f5b16a1fc41c15267dd9ece0cb80158f) |
+| Add Liquidity | [`0xb4f93ca0...`](https://sepolia.uniscan.xyz/tx/0xb4f93ca003f358c391bc1e303c362dd075027b6d903d2f9cebb4165dddabe5ea) |
+| Swap Tokens | [`0x8efb8b22...`](https://sepolia.uniscan.xyz/tx/0x8efb8b22ecc09943a976f8101ceb1e6c8ea70b873877dc73ac0c45bd0a6b8296) |
 
 ## 📜 License
 

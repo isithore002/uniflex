@@ -3,7 +3,7 @@ import { recordSandwichAttack, recordRefund, updateTreasury } from "./agent";
 
 // ═══════════════════════════════════════════════════════════════
 // SandwichDetectorV2 Event Listener
-// Tracks MEV protection stats in real-time
+// Uses polling instead of eth_newFilter for Unichain compatibility
 // ═══════════════════════════════════════════════════════════════
 
 // ABI for the events we care about
@@ -16,9 +16,11 @@ const SANDWICH_DETECTOR_ABI = [
 
 let detectorContract: ethers.Contract | null = null;
 let isListening = false;
+let pollInterval: NodeJS.Timeout | null = null;
+let lastBlock = 0;
 
 /**
- * Initialize MEV event listener
+ * Initialize MEV event listener with polling (Unichain-compatible)
  * Watches SandwichDetectorV2 contract for events
  */
 export async function startMevListener(
@@ -42,15 +44,39 @@ export async function startMevListener(
       provider
     );
 
-    // Listen for SandwichDetected events
-    detectorContract.on("SandwichDetected", (
-      attacker: string,
-      victim: string,
-      _poolId: string,
-      loss: bigint,
-      refund: bigint,
-      event: any
-    ) => {
+    // Get current block as starting point
+    lastBlock = await provider.getBlockNumber();
+
+    // Get initial treasury balance
+    await refreshTreasuryBalance();
+
+    // Start polling for events (every 5 seconds)
+    pollInterval = setInterval(() => pollEvents(provider, detectorAddress), 5000);
+
+    isListening = true;
+    console.log(`🛡️  MEV listener started (polling mode): ${detectorAddress}`);
+
+  } catch (error: any) {
+    console.error("Failed to start MEV listener:", error.message);
+  }
+}
+
+/**
+ * Poll for new events since last block
+ */
+async function pollEvents(provider: ethers.Provider, detectorAddress: string): Promise<void> {
+  if (!detectorContract) return;
+
+  try {
+    const currentBlock = await provider.getBlockNumber();
+    if (currentBlock <= lastBlock) return;
+
+    // Query SandwichDetected events
+    const sandwichFilter = detectorContract.filters.SandwichDetected();
+    const sandwichEvents = await detectorContract.queryFilter(sandwichFilter, lastBlock + 1, currentBlock);
+
+    for (const event of sandwichEvents) {
+      const [attacker, victim, _poolId, loss, refund] = (event as ethers.EventLog).args || [];
       recordSandwichAttack({
         attacker,
         victim,
@@ -58,30 +84,28 @@ export async function startMevListener(
         refund: ethers.formatEther(refund) + " ETH",
         txHash: event.transactionHash
       });
-    });
+    }
 
-    // Listen for RefundClaimed events
-    detectorContract.on("RefundClaimed", (
-      victim: string,
-      amount: bigint
-    ) => {
+    // Query RefundClaimed events
+    const refundFilter = detectorContract.filters.RefundClaimed();
+    const refundEvents = await detectorContract.queryFilter(refundFilter, lastBlock + 1, currentBlock);
+
+    for (const event of refundEvents) {
+      const [victim, amount] = (event as ethers.EventLog).args || [];
       recordRefund(victim, ethers.formatEther(amount) + " ETH");
-    });
+    }
 
-    // Listen for TreasuryFunded events (updates treasury balance)
-    detectorContract.on("TreasuryFunded", async () => {
+    // Query TreasuryFunded events
+    const treasuryFilter = detectorContract.filters.TreasuryFunded();
+    const treasuryEvents = await detectorContract.queryFilter(treasuryFilter, lastBlock + 1, currentBlock);
+
+    if (treasuryEvents.length > 0) {
       await refreshTreasuryBalance();
-    });
+    }
 
-    // Get initial treasury balance
-    await refreshTreasuryBalance();
-
-    isListening = true;
-    console.log(`🛡️  MEV listener started: ${detectorAddress}`);
-    console.log("   Watching for: SandwichDetected, RefundClaimed, TreasuryFunded");
-
+    lastBlock = currentBlock;
   } catch (error: any) {
-    console.error("Failed to start MEV listener:", error.message);
+    // Silently ignore polling errors (e.g., RPC rate limits)
   }
 }
 
@@ -104,8 +128,11 @@ async function refreshTreasuryBalance(): Promise<void> {
  * Stop MEV event listener
  */
 export function stopMevListener(): void {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
   if (detectorContract) {
-    detectorContract.removeAllListeners();
     detectorContract = null;
   }
   isListening = false;

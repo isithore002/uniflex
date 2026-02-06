@@ -109,7 +109,7 @@ export default function LiquidityPanel({ isLive }: LiquidityPanelProps) {
                 <p className="text-sm">
                   Tx:{' '}
                   <a
-                    href={`https://sepolia.etherscan.io/tx/${result.txHash}`}
+                    href={`https://sepolia.uniscan.xyz/tx/${result.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[#fc72ff] hover:underline font-mono"

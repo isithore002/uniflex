@@ -1,23 +1,26 @@
 @import "tailwindcss";
 
-/* Terminal OS Theme */
+/* Uniswap Theme */
 :root {
-  --bg: #0a0a0a;
-  --bg-secondary: #0f0f0f;
-  --card: #0c0c0c;
-  --card-hover: #111111;
-  --text: #00ff00;
-  --text-secondary: #00aa00;
-  --text-dim: #006600;
-  --muted: #004400;
-  --border: #003300;
-  --accent: #00ff00;
-  --accent-soft: rgba(0, 255, 0, 0.1);
-  --success: #00ff00;
-  --warning: #ffaa00;
-  --error: #ff3333;
-  --cyan: #00ffff;
-  --yellow: #ffff00;
+  --bg: #131313;
+  --bg-secondary: #191919;
+  --card: #1B1B1B;
+  --card-hover: #222222;
+  --text: #FFFFFF;
+  --text-secondary: #9B9B9B;
+  --text-dim: #5E5E5E;
+  --muted: #2D2D2D;
+  --border: #2D2D2D;
+  --accent: #FF007A;
+  --accent-hover: #FF3B9A;
+  --accent-soft: rgba(255, 0, 122, 0.15);
+  --success: #21C95E;
+  --warning: #FFB800;
+  --error: #FF4D4D;
+  --cyan: #36DBFF;
+  --yellow: #FFD700;
+  --pink: #FF007A;
+  --pink-light: #FC72FF;
 }
 
 * {
@@ -26,31 +29,12 @@
 
 body {
   margin: 0;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-family: 'Inter', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--bg);
   color: var(--text);
-  line-height: 1.4;
-  -webkit-font-smoothing: none;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
   font-size: 14px;
-}
-
-/* CRT scanline effect */
-body::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.15),
-    rgba(0, 0, 0, 0.15) 1px,
-    transparent 1px,
-    transparent 2px
-  );
-  z-index: 9999;
 }
 
 /* Monospace font utility */
@@ -59,12 +43,13 @@ body::before {
 }
 
 a {
-  color: var(--cyan);
-  text-decoration: underline;
+  color: var(--pink-light);
+  text-decoration: none;
 }
 
 a:hover {
-  color: var(--text);
+  color: var(--pink);
+  text-decoration: underline;
 }
 
 /* Blinking cursor */
@@ -77,13 +62,13 @@ a:hover {
   animation: blink 1s infinite;
 }
 
-/* Terminal glow effect */
+/* Terminal glow effect - pink */
 .terminal-glow {
-  text-shadow: 0 0 5px var(--text), 0 0 10px var(--text);
+  text-shadow: 0 0 5px var(--pink), 0 0 10px var(--pink);
 }
 
 /* Selection */
 ::selection {
-  background: var(--text);
+  background: var(--pink);
   color: var(--bg);
 }
