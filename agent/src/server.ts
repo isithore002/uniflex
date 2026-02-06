@@ -23,7 +23,14 @@ app.use(express.json());
 // ═══════════════════════════════════════════════════════════════
 
 function getSigner(): ethers.Wallet {
-  const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+  const provider = new ethers.JsonRpcProvider(
+    process.env.SEPOLIA_RPC_URL,
+    undefined,
+    {
+      staticNetwork: true, // Skip network detection
+      batchMaxCount: 1,    // Disable batching for compatibility
+    }
+  );
   return new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 }
 
