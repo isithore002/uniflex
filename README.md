@@ -1,11 +1,11 @@
 # UniFlux - MEV-Protected Liquidity Management with Autonomous Agents
 
-🏆 **Uniswap v4 Agentic Finance Hackathon Submission**  
-🌐 **ENS**: `uniflux.eth` → `0xed0081BB40b7Bf64D407Ec25a99475d0BB8ed903`
+ **Uniswap v4 Agentic Finance Hackathon Submission**  
+ **ENS**: `uniflux.eth` → `0xed0081BB40b7Bf64D407Ec25a99475d0BB8ed903`
 
 UniFlux demonstrates **deterministic MEV protection** using autonomous agents that observe, decide, and act on Uniswap v4 pools deployed on Unichain Sepolia.
 
-## 🎯 Key Achievement: Live MEV Sandwich Simulation
+##  Key Achievement: Live MEV Sandwich Simulation
 
 We've executed a **canonical three-transaction sandwich attack** on-chain to demonstrate our MEV detection mechanism:
 
@@ -15,7 +15,7 @@ We've executed a **canonical three-transaction sandwich attack** on-chain to dem
 
 **All transactions verifiable on [Unichain Sepolia Explorer](https://sepolia.uniscan.xyz)**
 
-📖 **[View Full MEV Demo Documentation →](MEV_SIMULATION_SUMMARY.md)**
+ **[View Full MEV Demo Documentation →](MEV_SIMULATION_SUMMARY.md)**
 
 ---
 
@@ -50,7 +50,7 @@ UniFlux is an **agentic liquidity manager** that protects LPs from MEV attacks o
 └─────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Node.js 18+
@@ -92,7 +92,7 @@ npm run dev
 
 ---
 
-## 📦 Deployed Contracts (Unichain Sepolia)
+## Deployed Contracts (Unichain Sepolia)
 
 | Contract | Address | Explorer |
 |----------|---------|----------|
@@ -108,7 +108,7 @@ npm run dev
 
 ---
 
-## 🔬 MEV Sandwich Simulation
+## MEV Sandwich Simulation
 
 ### On-Chain Proof
 
@@ -137,7 +137,7 @@ cd contracts
 
 ---
 
-## 🎓 Technical Highlights
+## Technical Highlights
 
 ### Detection Algorithm
 
@@ -177,7 +177,7 @@ refund = min(
 
 ---
 
-## 🔗 Onchain Proof
+## Onchain Proof
 
 ### Pool Initialization
 - **Tx Hash:** [0xd332fd72...](https://sepolia.uniscan.xyz/tx/0xd332fd720e81350720ad2ae1f7f1164b38ae468b6e6f9cf0ab6108fed13d042f)
@@ -193,13 +193,13 @@ refund = min(
 - **Tick Change:** -1901 (price moved)
 
 ---
-## 📚 Documentation
+## Documentation
 
 - **[MEV Simulation Summary](MEV_SIMULATION_SUMMARY.md)** - Quick overview of sandwich demo
 - **[MEV Demo Documentation](MEV_DEMO_DOCUMENTATION.md)** - Full technical details for judges
 - **[Sandwich Detector Results](SANDWICH_DETECTOR_RESULTS.md)** - Analysis of detection mechanism
 
-## 🛠️ Scripts & Tools
+## Scripts & Tools
 
 ### MEV Simulation
 ```powershell
@@ -224,7 +224,7 @@ npm run dev
 curl http://localhost:3001/api/status
 ```
 
-## 🏆 Hackathon Highlights
+## Highlights
 
 **Why UniFlux Stands Out**:
 1. ✅ **Real On-Chain Proof**: 3 MEV transactions on Unichain Sepolia
