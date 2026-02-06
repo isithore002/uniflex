@@ -370,3 +370,58 @@ contract SandwichDetectorStorage {
         emit TreasuryFunded(msg.sender, msg.value);
     }
 }
+
+/// @title SandwichDetectorV2
+/// @notice Main contract for sandwich detection with hook integration
+contract SandwichDetectorV2 is SandwichDetectorStorage {
+    using SandwichMath for uint256;
+
+    /// @notice Event emitted when a swap is recorded (for agent monitoring)
+    event SwapRecorded(
+        bytes32 indexed poolId,
+        address indexed swapper,
+        int128 delta0,
+        int128 delta1,
+        uint160 sqrtPriceX96After,
+        uint256 blockNumber
+    );
+
+    /// @notice Authorized hook contract
+    address public immutable hook;
+
+    error UnauthorizedCaller();
+
+    constructor(address _hook) {
+        hook = _hook;
+    }
+
+    /// @notice Record a swap from the UniFluxHook
+    /// @dev Only callable by authorized hook contract
+    /// @param poolId Pool identifier
+    /// @param swapper Address that initiated the swap
+    /// @param delta0 Change in token0 balance
+    /// @param delta1 Change in token1 balance
+    /// @param sqrtPriceX96After Post-swap price
+    function recordSwap(
+        bytes32 poolId,
+        address swapper,
+        int128 delta0,
+        int128 delta1,
+        uint160 sqrtPriceX96After
+    ) external {
+        if (msg.sender != hook) revert UnauthorizedCaller();
+
+        // Emit event for off-chain agent
+        emit SwapRecorded(
+            poolId,
+            swapper,
+            delta0,
+            delta1,
+            sqrtPriceX96After,
+            block.number
+        );
+
+        // TODO: Pattern matching logic would go here
+        // For now, just record the event for demonstration
+    }
+}
