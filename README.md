@@ -3,6 +3,13 @@
  **Uniswap v4 Agentic Finance Hackathon Submission**  
  **ENS**: `uniflux.eth` → `0xed0081BB40b7Bf64D407Ec25a99475d0BB8ed903`
 
+> **📊 Submission Status**:  
+> ✅ MEV simulation complete (3 on-chain transactions)  
+> ✅ Autonomous agent working (OBSERVE-DECIDE-ACT loop)  
+> ✅ Smart contracts deployed on Unichain Sepolia  
+> ✅ Hook design complete & documented  
+> ⏳ Hook deployment pending v4 dependency resolution ([details](HOOK_DEPLOYMENT_STATUS.md))
+
 UniFlux demonstrates **deterministic MEV protection** using autonomous agents that observe, decide, and act on Uniswap v4 pools deployed on Unichain Sepolia.
 
 ##  Key Achievement: Live MEV Sandwich Simulation

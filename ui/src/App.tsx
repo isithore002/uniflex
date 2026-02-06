@@ -425,7 +425,7 @@ function App() {
       onClick={focusInput}
     >
       {/* Terminal Window */}
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto ">
         {/* Title Bar */}
         <div className="bg-[#1B1B1B] border border-[#2D2D2D] rounded-t-2xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">

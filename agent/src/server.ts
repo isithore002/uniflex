@@ -19,18 +19,45 @@ app.use(cors());
 app.use(express.json());
 
 // ═══════════════════════════════════════════════════════════════
+// SHARED PROVIDER INSTANCE
+// ═══════════════════════════════════════════════════════════════
+
+let sharedProvider: ethers.JsonRpcProvider | null = null;
+
+function getProvider(): ethers.JsonRpcProvider {
+  if (!sharedProvider) {
+    console.log("🔌 Initializing RPC provider...");
+    sharedProvider = new ethers.JsonRpcProvider(
+      process.env.SEPOLIA_RPC_URL,
+      {
+        name: "unichain-sepolia",
+        chainId: 1301
+      },
+      {
+        staticNetwork: true,
+        batchMaxCount: 1,
+        polling: true,
+        pollingInterval: 4000,
+      }
+    );
+
+    // Handle provider errors (don't exit process)
+    sharedProvider.on("error", (error) => {
+      console.error("[Provider] Error event:", error.message);
+      // Don't throw - just log
+    });
+
+    console.log("✅ Provider initialized");
+  }
+  return sharedProvider;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // HELPER: Get configured signer
 // ═══════════════════════════════════════════════════════════════
 
 function getSigner(): ethers.Wallet {
-  const provider = new ethers.JsonRpcProvider(
-    process.env.SEPOLIA_RPC_URL,
-    undefined,
-    {
-      staticNetwork: true, // Skip network detection
-      batchMaxCount: 1,    // Disable batching for compatibility
-    }
-  );
+  const provider = getProvider();
   return new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
 }
 
@@ -52,7 +79,8 @@ function getTokenAddresses(): { token0: string; token1: string } {
  */
 app.get("/state", async (_, res) => {
   try {
-    const state = await refreshState();
+    const provider = getProvider();
+    const state = await refreshState(provider);
     res.json({
       success: true,
       data: state,
@@ -80,7 +108,8 @@ app.get("/state", async (_, res) => {
 app.post("/tick", async (_, res) => {
   try {
     console.log("\n🔔 Manual tick triggered via API");
-    const state = await runAgentTick({ manual: true });
+    const provider = getProvider();
+    const state = await runAgentTick({ manual: true, provider });
     res.json({
       success: true,
       data: state,
@@ -307,10 +336,14 @@ const server = app.listen(PORT, () => {
   // Start MEV protection listener (non-blocking)
   const detectorAddress = process.env.SANDWICH_DETECTOR_ADDRESS;
   if (detectorAddress) {
-    const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
-    startMevListener(provider, detectorAddress).catch(err => {
-      console.error("MEV listener error:", err.message);
-    });
+    setTimeout(async () => {
+      try {
+        const provider = getProvider();
+        await startMevListener(provider, detectorAddress);
+      } catch (err: any) {
+        console.error("MEV listener error:", err.message);
+      }
+    }, 1000);
   } else {
     console.log("\n⚠️  SANDWICH_DETECTOR_ADDRESS not set - MEV tracking simulated");
   }
@@ -328,4 +361,21 @@ process.on('SIGINT', () => {
   stopMevListener();
   server.close();
   process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n👋 Shutting down...');
+  stopMevListener();
+  server.close();
+  process.exit(0);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - just log it
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit - just log it
 });

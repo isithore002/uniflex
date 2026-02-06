@@ -61,33 +61,60 @@ export async function addLiquidity(
     console.log(`  Tick Range: [${STRATEGY_PARAMS.tickLower}, ${STRATEGY_PARAMS.tickUpper}]`);
     console.log(`  Liquidity: ${ethers.formatEther(STRATEGY_PARAMS.liquidityAmount)} units`);
 
+    // Verify connection first
+    const signerAddress = await Promise.race([
+      signer.getAddress(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 5000)
+      )
+    ]);
+    
+    console.log(`  Wallet: ${signerAddress}`);
+
     const helper = new ethers.Contract(liquidityHelperAddress, LIQUIDITY_HELPER_ABI, signer);
-    const signerAddress = await signer.getAddress();
 
     // Sort tokens for pool key
     const [currency0, currency1] = token0Address.toLowerCase() < token1Address.toLowerCase()
       ? [token0Address, token1Address]
       : [token1Address, token0Address];
 
-    // Approve tokens if needed
+    // Approve tokens if needed with timeout protection
     const token0Contract = new ethers.Contract(currency0, ERC20_ABI, signer);
     const token1Contract = new ethers.Contract(currency1, ERC20_ABI, signer);
 
-    const [allowance0, allowance1] = await Promise.all([
-      token0Contract.allowance(signerAddress, liquidityHelperAddress),
-      token1Contract.allowance(signerAddress, liquidityHelperAddress)
+    console.log("  🔍 Checking allowances...");
+    const [allowance0, allowance1] = await Promise.race([
+      Promise.all([
+        token0Contract.allowance(signerAddress, liquidityHelperAddress),
+        token1Contract.allowance(signerAddress, liquidityHelperAddress)
+      ]),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Allowance check timeout')), 8000)
+      )
     ]);
 
     if (allowance0 < ethers.parseEther("1")) {
       console.log("  📝 Approving token0...");
       const tx = await token0Contract.approve(liquidityHelperAddress, ethers.MaxUint256);
-      await tx.wait();
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Approval timeout')), 30000)
+        )
+      ]);
+      console.log(`  ✅ Token0 approved (${receipt.hash.slice(0, 10)}...)`);
     }
 
     if (allowance1 < ethers.parseEther("1")) {
       console.log("  📝 Approving token1...");
       const tx = await token1Contract.approve(liquidityHelperAddress, ethers.MaxUint256);
-      await tx.wait();
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Approval timeout')), 30000)
+        )
+      ]);
+      console.log(`  ✅ Token1 approved (${receipt.hash.slice(0, 10)}...)`);
     }
 
     // Build pool key
@@ -99,16 +126,26 @@ export async function addLiquidity(
       hooks: ethers.ZeroAddress
     };
 
-    // Execute add liquidity
+    // Execute add liquidity with timeout protection
     console.log("  🔄 Executing addLiquidity...");
-    const tx = await helper.addLiquidity(
-      poolKey,
-      STRATEGY_PARAMS.tickLower,
-      STRATEGY_PARAMS.tickUpper,
-      STRATEGY_PARAMS.liquidityAmount
-    );
+    const tx = await Promise.race([
+      helper.addLiquidity(
+        poolKey,
+        STRATEGY_PARAMS.tickLower,
+        STRATEGY_PARAMS.tickUpper,
+        STRATEGY_PARAMS.liquidityAmount
+      ),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction submission timeout')), 15000)
+      )
+    ]);
 
-    const receipt = await tx.wait();
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+      )
+    ]);
     console.log(`  ✅ Liquidity added in block ${receipt.blockNumber}`);
 
     return {
@@ -153,6 +190,15 @@ export async function removeLiquidity(
     console.log(`  Tick Range: [${STRATEGY_PARAMS.tickLower}, ${STRATEGY_PARAMS.tickUpper}]`);
     console.log(`  Liquidity: ${ethers.formatEther(STRATEGY_PARAMS.liquidityAmount)} units`);
 
+    // Verify connection first
+    const signerAddress = await Promise.race([
+      signer.getAddress(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 5000)
+      )
+    ]);
+    console.log(`  Wallet: ${signerAddress}`);
+
     const helper = new ethers.Contract(liquidityHelperAddress, LIQUIDITY_HELPER_ABI, signer);
 
     // Sort tokens for pool key
@@ -169,16 +215,26 @@ export async function removeLiquidity(
       hooks: ethers.ZeroAddress
     };
 
-    // Execute remove liquidity (negative delta)
+    // Execute remove liquidity (negative delta) with timeout protection
     console.log("  🔄 Executing removeLiquidity...");
-    const tx = await helper.addLiquidity(
-      poolKey,
-      STRATEGY_PARAMS.tickLower,
-      STRATEGY_PARAMS.tickUpper,
-      -STRATEGY_PARAMS.liquidityAmount  // Negative = remove
-    );
+    const tx = await Promise.race([
+      helper.addLiquidity(
+        poolKey,
+        STRATEGY_PARAMS.tickLower,
+        STRATEGY_PARAMS.tickUpper,
+        -STRATEGY_PARAMS.liquidityAmount  // Negative = remove
+      ),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction submission timeout')), 15000)
+      )
+    ]);
 
-    const receipt = await tx.wait();
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+      )
+    ]);
     console.log(`  ✅ Liquidity removed in block ${receipt.blockNumber}`);
 
     return {

@@ -167,11 +167,12 @@ interface AgentConfig {
   swapHelperAddress: string;
 }
 
-function getConfig(): AgentConfig {
+function getConfig(provider?: ethers.Provider): AgentConfig {
   validateEnv();
 
-  const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
-  const signer = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
+  // Use provided provider or create one (for backward compatibility)
+  const rpcProvider = provider || new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+  const signer = new ethers.Wallet(process.env.PRIVATE_KEY!, rpcProvider);
 
   const tokenA = process.env.TOKEN_A_ADDRESS!;
   const tokenB = process.env.TOKEN_B_ADDRESS!;
@@ -180,7 +181,7 @@ function getConfig(): AgentConfig {
     : [tokenB, tokenA];
 
   return {
-    provider,
+    provider: rpcProvider,
     signer,
     poolManagerAddress: process.env.POOL_MANAGER_ADDRESS!,
     token0Address: token0,
@@ -200,8 +201,8 @@ function addTimelineEntry(entry: TimelineEntry): void {
   }
 }
 
-export async function runAgentTick(options?: { manual?: boolean }): Promise<AgentState> {
-  const config = getConfig();
+export async function runAgentTick(options?: { manual?: boolean; provider?: ethers.Provider }): Promise<AgentState> {
+  const config = getConfig(options?.provider);
   const timestamp = new Date().toISOString();
   
   console.log("\n" + "═".repeat(60));
@@ -338,9 +339,9 @@ export function getAgentState(): AgentState {
   return { ...agentState };
 }
 
-export async function refreshState(): Promise<AgentState> {
+export async function refreshState(provider?: ethers.Provider): Promise<AgentState> {
   // Just read balances without executing actions
-  const config = getConfig();
+  const config = getConfig(provider);
   agentState.agentWallet = await config.signer.getAddress();
   agentState.poolManager = config.poolManagerAddress;
 
