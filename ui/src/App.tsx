@@ -161,12 +161,6 @@ function App() {
       const mETH = parseFloat(agentStatus.poolState?.mETH || '0').toFixed(4);
       const timestamp = new Date().toLocaleTimeString();
       
-      // Color-code the decision
-      const decisionLabel = decision === 'NOOP' ? '[  OK  ]' :
-                           decision === 'LOCAL_SWAP' ? '[SWAP ]' :
-                           decision === 'CROSS_CHAIN' ? '[BRIDGE]' :
-                           decision === 'REMOVE_LIQUIDITY' ? '[REMOVE]' : '[INFO]';
-      
       addOutput([
         ``,
         `┌─── AUTONOMOUS CYCLE #${currentCycle} ─────────────────────────────────┐`,
@@ -317,7 +311,6 @@ function App() {
           const autoMode = agentStatus?.autonomous?.running ? 'ENABLED' : 'DISABLED'
           const cycleCount = agentStatus?.autonomous?.cycleCount || 0
           const lastDecision = agentStatus?.lastAction?.decision || 'N/A'
-          const dryRun = agentStatus?.safetyConfig?.dryRunEnabled ? 'ON' : 'OFF'
           
           addOutput([
             '',

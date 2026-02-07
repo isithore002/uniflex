@@ -143,7 +143,7 @@ export default function MevProtection({ isLive, stats = defaultStats }: MevProte
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.recentAttacks.map((attack, i) => (
+                  {stats.recentAttacks.map((attack: any, i: number) => (
                     <tr key={i} className="border-b border-[#2a2a2a]">
                       <td className="py-2 text-[#9b9b9b]">{attack.timestamp}</td>
                       <td className="py-2 text-red-400 font-mono">{attack.attacker}</td>
