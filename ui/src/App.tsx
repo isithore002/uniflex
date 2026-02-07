@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './App.css'
-import { fetchAgentState, checkAgentHealth, runAgentTick, addLiquidity, removeLiquidity, fetchMevStats } from './lib/agent'
+import { fetchAgentState, checkAgentHealth, runAgentTick, addLiquidity, removeLiquidity, fetchMevStats, getEvacuationQuote, executeEvacuation, testEvacuation } from './lib/agent'
 import type { AgentState, TimelineEntry } from './lib/agent'
+import { useUnifluxEns } from './hooks/useEns'
 
 // Helper to render line with clickable links
 function renderLineWithLinks(line: string): React.ReactNode {
@@ -35,7 +36,7 @@ function renderLineWithLinks(line: string): React.ReactNode {
 function App() {
   const [state, setState] = useState<AgentState | null>(null)
   const [isLive, setIsLive] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [_error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [terminalOutput, setTerminalOutput] = useState<string[]>([])
@@ -43,6 +44,10 @@ function App() {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const terminalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  // Dynamic ENS resolution (not hard-coded!)
+  // Verifies on-chain that uniflux.eth → our wallet address
+  const { displayName: ensName, isLoading: ensLoading, isVerified: ensVerified } = useUnifluxEns()
 
   const addOutput = useCallback((lines: string | string[]) => {
     const newLines = Array.isArray(lines) ? lines : [lines]
@@ -113,10 +118,15 @@ function App() {
     return () => clearInterval(interval)
   }, [refreshState, addOutput])
 
-  // Auto-scroll terminal
+  // Auto-scroll terminal (only if near bottom)
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight
+      const { scrollTop, scrollHeight, clientHeight } = terminalRef.current
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
+      
+      if (isNearBottom) {
+        terminalRef.current.scrollTop = scrollHeight
+      }
     }
   }, [terminalOutput])
 
@@ -154,6 +164,12 @@ function App() {
           '│  add <amt>   - Add liquidity (e.g., add 100)               │',
           '│  remove <amt>- Remove liquidity (e.g., remove 50)          │',
           '│  config      - Display agent configuration                  │',
+          '├─────────────────────────────────────────────────────────────┤',
+          '│  SAFE HARBOR (LI.FI Integration)                            │',
+          '│  evacuate    - Execute Safe Harbor evacuation               │',
+          '│  quote       - Get LI.FI bridge quote                       │',
+          '│  evac-test   - Test evacuation flow (dry run)               │',
+          '├─────────────────────────────────────────────────────────────┤',
           '│  clear       - Clear terminal output                        │',
           '│  help        - Show this help message                       │',
           '└─────────────────────────────────────────────────────────────┘',
@@ -366,6 +382,121 @@ function App() {
         }
         break
 
+      case 'evacuate':
+      case 'safeharbor':
+        addOutput([
+          '',
+          '┌─── SAFE HARBOR EVACUATION ───────────────────────────────────┐',
+          '│  🚨 Initiating cross-chain asset protection...              │',
+          '│                                                              │',
+          '│  Flow: Unichain Sepolia → Base (via LI.FI)                  │',
+          '│  Destination: Aave V3 USDC Pool                              │',
+          '└──────────────────────────────────────────────────────────────┘',
+          ''
+        ])
+        addOutput('[....] Step 1: Getting LI.FI bridge quote...')
+        try {
+          const quote = await getEvacuationQuote()
+          addOutput([
+            '[  OK  ] Quote received:',
+            `         From: ${quote.fromChain} (${quote.fromToken})`,
+            `         To:   ${quote.toChain} (${quote.toToken})`,
+            `         Amount: ${quote.amountIn} → ${quote.amountOut}`,
+            `         Bridge: ${quote.bridge || 'LI.FI Optimal'}`,
+            ''
+          ])
+          addOutput('[....] Step 2: Executing bridge transaction...')
+          const result = await executeEvacuation()
+          
+          if (result.success) {
+            addOutput([
+              '[  OK  ] Evacuation complete!',
+              '',
+              '┌─── EVACUATION RESULT ────────────────────────────────────────┐',
+              `│  Status:     ${result.status.padEnd(47)}│`,
+              `│  TX Hash:    ${(result.txHash || 'N/A').slice(0, 42).padEnd(47)}│`,
+              `│  Bridge TX:  ${(result.bridgeTxHash || 'N/A').slice(0, 42).padEnd(47)}│`,
+              '├──────────────────────────────────────────────────────────────┤',
+              '│  ✅ Assets safely deposited in Aave V3 on Base              │',
+              '│  📊 Earning yield while protected from MEV                   │',
+              '└──────────────────────────────────────────────────────────────┘',
+              ''
+            ])
+          } else {
+            addOutput([
+              `[FAILED] Evacuation failed: ${result.error || 'Unknown error'}`,
+              `         Status: ${result.status}`,
+              ''
+            ])
+          }
+          await refreshState()
+        } catch (err: any) {
+          addOutput([`[FAILED] Evacuation error: ${err.message}`, ''])
+        }
+        break
+
+      case 'quote':
+        addOutput('[....] Fetching LI.FI bridge quote...')
+        try {
+          const quote = await getEvacuationQuote()
+          addOutput([
+            '',
+            '┌─── LI.FI BRIDGE QUOTE ───────────────────────────────────────┐',
+            `│  Source Chain:     ${quote.fromChain.padEnd(40)}│`,
+            `│  Source Token:     ${quote.fromToken.padEnd(40)}│`,
+            `│  Amount In:        ${quote.amountIn.padEnd(40)}│`,
+            '├──────────────────────────────────────────────────────────────┤',
+            `│  Dest Chain:       ${quote.toChain.padEnd(40)}│`,
+            `│  Dest Token:       ${quote.toToken.padEnd(40)}│`,
+            `│  Amount Out:       ${quote.amountOut.padEnd(40)}│`,
+            '├──────────────────────────────────────────────────────────────┤',
+            `│  Bridge:           ${(quote.bridge || 'LI.FI Optimal').padEnd(40)}│`,
+            `│  Slippage:         ${(quote.slippage || '1%').padEnd(40)}│`,
+            `│  Est. Time:        ${(quote.estimatedTime || '~5 min').padEnd(40)}│`,
+            '└──────────────────────────────────────────────────────────────┘',
+            ''
+          ])
+        } catch (err: any) {
+          addOutput([`[FAILED] Quote error: ${err.message}`, ''])
+        }
+        break
+
+      case 'evac-test':
+        addOutput([
+          '',
+          '┌─── EVACUATION TEST (DRY RUN) ──────────────────────────────────┐',
+          '│  Testing Safe Harbor flow without executing transactions...   │',
+          '└───────────────────────────────────────────────────────────────┘',
+          ''
+        ])
+        addOutput('[....] Running evacuation test...')
+        try {
+          const testResult = await testEvacuation()
+          if (testResult.success) {
+            addOutput([
+              '[  OK  ] Test completed successfully!',
+              '',
+              '┌─── TEST RESULTS ─────────────────────────────────────────────┐',
+              '│  ✅ LI.FI connection:     OK                                 │',
+              '│  ✅ Quote retrieval:      OK                                 │',
+              '│  ✅ Route validation:     OK                                 │',
+              '│  ✅ Aave pool check:      OK                                 │',
+              '├───────────────────────────────────────────────────────────────┤',
+              '│  Ready for evacuation! Use "evacuate" command to execute.   │',
+              '└───────────────────────────────────────────────────────────────┘',
+              ''
+            ])
+          } else {
+            addOutput([
+              `[FAILED] Test failed: ${testResult.error || 'Unknown error'}`,
+              ''
+            ])
+          }
+        } catch (err: any) {
+          addOutput([`[FAILED] Test error: ${err.message}`, ''])
+        }
+        break
+
       case 'config':
         if (!state) {
           addOutput(['[ERROR] No agent state available.', ''])
@@ -421,13 +552,12 @@ function App() {
 
   return (
     <div 
-      className="min-h-screen bg-[#131313] p-4 font-mono text-white"
-      onClick={focusInput}
+      className="h-screen bg-[#131313] p-4 font-mono text-white flex items-center justify-center overflow-hidden"
     >
       {/* Terminal Window */}
-      <div className="max-w-4xl mx-auto ">
+      <div className="w-full max-w-4xl h-full max-h-[90vh] flex flex-col">
         {/* Title Bar */}
-        <div className="bg-[#1B1B1B] border border-[#2D2D2D] rounded-t-2xl px-4 py-3 flex items-center justify-between">
+        <div className="bg-[#1B1B1B] border border-[#2D2D2D] rounded-t-2xl px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-[#ff5f57]"></div>
             <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
@@ -444,7 +574,8 @@ function App() {
         {/* Terminal Body */}
         <div 
           ref={terminalRef}
-          className="bg-[#191919] border-x border-b border-[#2D2D2D] rounded-b-2xl p-4 h-[80vh] overflow-y-auto font-mono text-sm"
+          className="bg-[#191919] border-x border-[#2D2D2D] p-4 overflow-y-auto font-mono text-sm flex-1"
+          onClick={focusInput}
         >
           {/* Output */}
           {terminalOutput.map((line, i) => (
@@ -489,8 +620,12 @@ function App() {
         </div>
 
         {/* Status Bar */}
-        <div className="bg-[#1B1B1B] border border-t-0 border-[#2D2D2D] rounded-b-lg px-4 py-2 text-xs text-[#9B9B9B] flex justify-between">
-          <span>ENS: uniflux.eth | Network: Unichain Sepolia</span>
+        <div className="bg-[#1B1B1B] border border-t-0 border-[#2D2D2D] rounded-b-lg px-4 py-2 text-xs text-[#9B9B9B] flex justify-between flex-shrink-0">
+          <span>
+            ENS: {ensLoading ? 'Resolving...' : ensName}
+            {ensVerified && <span className="text-[#21C95E] ml-1">✓</span>}
+            {' '}| Network: Unichain Sepolia
+          </span>
           <span>
             {state ? `Deviation: ${state.deviation?.toFixed(2)}% | Status: ${state.status}` : 'Connecting...'}
           </span>

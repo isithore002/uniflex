@@ -6,6 +6,12 @@ import { ethers } from "ethers";
 import { getAgentState, runAgentTick, refreshState, AgentState } from "./agent";
 import { addLiquidity, removeLiquidity, getStrategyParams, LiquidityResult } from "./liquidity";
 import { startMevListener, stopMevListener } from "./mev-listener";
+import { 
+  getLiFiBridgeQuote, 
+  executeSafeHarborEvacuation, 
+  getEvacuationStatus,
+  testEvacuationFlow 
+} from "./evacuate";
 
 // Load environment variables - use absolute path
 const envPath = path.resolve(__dirname, "../../.env");
@@ -260,6 +266,169 @@ app.get("/agent/strategy", (_, res) => {
     note: "These parameters are set by the agent, not the UI. UI triggers execution only.",
     timestamp: new Date().toISOString()
   });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SAFE HARBOR EVACUATION ENDPOINTS (LI.FI Integration)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * GET /evacuation/quote
+ * Get a LI.FI bridge quote for evacuation
+ */
+app.get("/evacuation/quote", async (req, res) => {
+  console.log("\n🔍 GET /evacuation/quote");
+  
+  try {
+    const amount = req.query.amount as string || "1000000000"; // Default 1000 USDC (6 decimals)
+    const signer = getSigner();
+    const walletAddress = await signer.getAddress();
+    
+    const quote = await getLiFiBridgeQuote(amount, walletAddress, {
+      slippage: parseFloat(req.query.slippage as string) || 0.005
+    });
+    
+    if (!quote) {
+      return res.status(400).json({
+        success: false,
+        error: "No bridge routes available"
+      });
+    }
+    
+    res.json({
+      success: true,
+      quote: {
+        fromChain: quote.fromChain,
+        toChain: quote.toChain,
+        fromToken: quote.fromToken,
+        toToken: quote.toToken,
+        fromAmount: quote.fromAmount,
+        estimatedOutput: quote.estimatedOutput,
+        bridgeUsed: quote.bridgeUsed,
+        estimatedTimeSeconds: quote.estimatedTime,
+        gasCostUSD: quote.gasCostUSD,
+        slippage: quote.slippage
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error("  ❌ Quote failed:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /evacuation/execute
+ * Execute full Safe Harbor evacuation flow
+ */
+app.post("/evacuation/execute", async (req, res) => {
+  console.log("\n🚨 POST /evacuation/execute");
+  console.log("  📋 UI triggered Safe Harbor evacuation");
+  
+  try {
+    const signer = getSigner();
+    const { token0, token1 } = getTokenAddresses();
+    const liquidityHelperAddress = process.env.LIQUIDITY_HELPER_ADDRESS;
+    
+    if (!liquidityHelperAddress) {
+      return res.status(400).json({
+        success: false,
+        error: "LIQUIDITY_HELPER_ADDRESS not configured"
+      });
+    }
+    
+    // Slippage from request body (default 0.5%)
+    const slippage = req.body.slippage || 0.005;
+    const skipAave = req.body.skipAave || false;
+    
+    // Create remove liquidity function for evacuation
+    const removeLiquidityFn = async () => {
+      const result = await removeLiquidity(
+        signer,
+        liquidityHelperAddress,
+        token0,
+        token1,
+        "evacuation"
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove liquidity");
+      }
+      
+      // Parse the removed amounts (simplified - actual implementation needs proper parsing)
+      const amount = ethers.parseEther(result.amount || "0");
+      return {
+        token0Amount: amount,
+        token1Amount: amount, // Would need actual amounts from receipt
+        txHash: result.txHash || "0x",
+      };
+    };
+    
+    // Execute evacuation
+    const result = await executeSafeHarborEvacuation(removeLiquidityFn, {
+      slippage,
+      skipAaveDeposit: skipAave
+    });
+    
+    res.json({
+      success: result.success,
+      status: result.status,
+      message: result.success 
+        ? "Safe Harbor evacuation complete - assets protected in Aave"
+        : "Evacuation failed",
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error: any) {
+    console.error("  ❌ Evacuation failed:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /evacuation/status
+ * Get current evacuation status
+ */
+app.get("/evacuation/status", (_, res) => {
+  const status = getEvacuationStatus();
+  
+  res.json({
+    active: status !== null && status.step !== "COMPLETE" && status.step !== "FAILED",
+    status: status,
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * POST /evacuation/test
+ * Test evacuation flow (dry run)
+ */
+app.post("/evacuation/test", async (_, res) => {
+  console.log("\n🧪 POST /evacuation/test");
+  
+  try {
+    await testEvacuationFlow();
+    const status = getEvacuationStatus();
+    
+    res.json({
+      success: true,
+      message: "Evacuation test completed (dry run)",
+      status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error("  ❌ Test failed:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 /**
