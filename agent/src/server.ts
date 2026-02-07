@@ -10,7 +10,10 @@ import {
   getLiFiBridgeQuote, 
   executeSafeHarborEvacuation, 
   getEvacuationStatus,
-  testEvacuationFlow 
+  testEvacuationFlow,
+  getExplorerUrl,
+  getLiFiExplorerUrl,
+  CHAIN_CONFIG
 } from "./evacuate";
 
 // Load environment variables - use absolute path
@@ -305,7 +308,7 @@ app.get("/evacuation/quote", async (req, res) => {
         fromAmount: quote.fromAmount,
         estimatedOutput: quote.estimatedOutput,
         bridgeUsed: quote.bridgeUsed,
-        estimatedTimeSeconds: quote.estimatedTime,
+        estimatedTime: quote.estimatedTime,
         gasCostUSD: quote.gasCostUSD,
         slippage: quote.slippage
       },
@@ -368,14 +371,40 @@ app.post("/evacuation/execute", async (req, res) => {
     };
     
     // Execute evacuation
+    const startTime = Date.now();
     const result = await executeSafeHarborEvacuation(removeLiquidityFn, {
       slippage,
       skipAaveDeposit: skipAave
     });
+    const executionTime = Math.round((Date.now() - startTime) / 1000);
+    
+    // Build explorer URLs if we have transaction hashes
+    const explorerUrls: Record<string, string> = {};
+    if (result.status?.removedLiquidity?.txHash) {
+      explorerUrls.removeLiquidity = getExplorerUrl(
+        result.status.removedLiquidity.txHash, 
+        CHAIN_CONFIG.SOURCE.chainId
+      );
+    }
+    if (result.status?.bridge?.txHash) {
+      explorerUrls.bridge = getLiFiExplorerUrl(result.status.bridge.txHash);
+      explorerUrls.bridgeSource = getExplorerUrl(
+        result.status.bridge.txHash,
+        CHAIN_CONFIG.SOURCE.chainId
+      );
+    }
+    if (result.status?.aaveDeposit?.txHash) {
+      explorerUrls.aaveDeposit = getExplorerUrl(
+        result.status.aaveDeposit.txHash,
+        CHAIN_CONFIG.DESTINATION.chainId
+      );
+    }
     
     res.json({
       success: result.success,
       status: result.status,
+      explorerUrls,
+      executionTime,
       message: result.success 
         ? "Safe Harbor evacuation complete - assets protected in Aave"
         : "Evacuation failed",

@@ -207,6 +207,90 @@ cd contracts
 
 ---
 
+## 🌉 LI.FI Safe Harbor Integration
+
+UniFlux integrates **LI.FI** for cross-chain emergency evacuation when MEV attacks are detected. This "Safe Harbor" feature bridges LP assets to Aave V3 on Base, protecting funds while earning yield.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               SAFE HARBOR EVACUATION FLOW                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 🚨 MEV ATTACK DETECTED (SandwichDetectorV2)                 │
+│            ↓                                                     │
+│  2. 💧 REMOVE LP from Uniswap v4 (Unichain Sepolia)             │
+│            ↓                                                     │
+│  3. 🌉 BRIDGE via LI.FI (Unichain → Base)                       │
+│     • Routes: Across, Stargate, Hop                             │
+│     • Retry logic with alternative bridges                       │
+│     • Real-time status tracking                                  │
+│            ↓                                                     │
+│  4. 🏦 DEPOSIT to Aave V3 (Base)                                │
+│     • Pool: 0xA238Dd80C259a72e81d7e4664a9801593F98d1c4          │
+│            ↓                                                     │
+│  5. 📈 EARN YIELD while protected from MEV                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Features
+
+- **Multi-Bridge Support**: Across, Stargate, Hop via LI.FI aggregator
+- **Retry Logic**: Exponential backoff with alternative route fallback
+- **Gas Estimation**: Pre-checks gas balance before execution
+- **Slippage Protection**: Configurable (0.5%, 1%, 3%)
+- **Real-time Tracking**: LI.FI explorer integration
+- **Aave V3 Deposit**: Automatic deposit to earn yield on Base
+
+### Usage
+
+**Terminal Commands:**
+```bash
+# Get bridge quote
+uniflux> quote
+
+# Execute evacuation
+uniflux> evacuate
+
+# Test evacuation (dry run)
+uniflux> evac-test
+```
+
+**API Endpoints:**
+```bash
+# Get quote
+curl "http://localhost:3001/evacuation/quote?amount=1000000000"
+
+# Execute evacuation
+curl -X POST http://localhost:3001/evacuation/execute \
+  -H "Content-Type: application/json" \
+  -d '{"slippage": 0.01}'
+```
+
+### Live Transaction Proof
+
+> **TODO**: Add your test transaction after running evacuation
+
+| Field | Value |
+|-------|-------|
+| **Amount** | XX USDC |
+| **Route** | Unichain → Base |
+| **Bridge** | Across (via LI.FI) |
+| **TX Hash** | `0x...` |
+| **Explorer** | [View on LI.FI](https://explorer.li.fi/tx/...) |
+| **Time** | Xs |
+| **Gas Cost** | $X.XX |
+
+### Demo Video
+
+> **TODO**: Add your demo video link
+
+[📹 Watch 3-minute Safe Harbor Demo](https://loom.com/share/your-video-id)
+
+---
+
 ## Technical Highlights
 
 ### Detection Algorithm

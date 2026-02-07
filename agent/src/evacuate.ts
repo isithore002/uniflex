@@ -23,27 +23,67 @@ dotenv.config({ path: envPath });
 // MEV Detected → Remove LP → Bridge via LI.FI → Deposit to Aave
 // ═══════════════════════════════════════════════════════════════
 
-// Chain Configuration
+// Chain Configuration - supports both mainnet and testnet
 export const CHAIN_CONFIG = {
   // Source chain (Unichain Sepolia - testnet)
   SOURCE: {
     chainId: 1301,
     name: "Unichain Sepolia",
     rpcUrl: process.env.SEPOLIA_RPC_URL || "https://sepolia.unichain.org",
+    explorer: "https://sepolia.uniscan.xyz",
   },
   // Destination chain (Base - for Aave deposit)
   DESTINATION: {
     chainId: 8453,
     name: "Base",
     rpcUrl: "https://mainnet.base.org",
+    explorer: "https://basescan.org",
   },
   // Testnet destination for testing
   DESTINATION_TESTNET: {
     chainId: 84532,
     name: "Base Sepolia",
     rpcUrl: "https://sepolia.base.org",
+    explorer: "https://sepolia.basescan.org",
+  },
+  // Alternative source chains (for LI.FI which needs mainnet)
+  ARBITRUM: {
+    chainId: 42161,
+    name: "Arbitrum One",
+    rpcUrl: "https://arb1.arbitrum.io/rpc",
+    explorer: "https://arbiscan.io",
+  },
+  ARBITRUM_SEPOLIA: {
+    chainId: 421614,
+    name: "Arbitrum Sepolia",
+    rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
+    explorer: "https://sepolia.arbiscan.io",
   },
 };
+
+/**
+ * Get block explorer URL for a transaction
+ */
+export function getExplorerUrl(txHash: string, chainId: number): string {
+  const explorers: Record<number, string> = {
+    1301: "https://sepolia.uniscan.xyz",
+    8453: "https://basescan.org",
+    84532: "https://sepolia.basescan.org",
+    42161: "https://arbiscan.io",
+    421614: "https://sepolia.arbiscan.io",
+    10: "https://optimistic.etherscan.io",
+    1: "https://etherscan.io",
+  };
+  const base = explorers[chainId] || "https://etherscan.io";
+  return `${base}/tx/${txHash}`;
+}
+
+/**
+ * Get LI.FI explorer URL for bridge tracking
+ */
+export function getLiFiExplorerUrl(txHash: string): string {
+  return `https://explorer.li.fi/tx/${txHash}`;
+}
 
 // Token addresses
 export const TOKEN_ADDRESSES = {
@@ -213,7 +253,7 @@ export async function getLiFiBridgeQuote(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STEP 2: EXECUTE LI.FI BRIDGE
+// STEP 2: EXECUTE LI.FI BRIDGE (WITH RETRY LOGIC)
 // ═══════════════════════════════════════════════════════════════
 
 export interface BridgeExecutionResult {
@@ -221,71 +261,187 @@ export interface BridgeExecutionResult {
   txHash?: string;
   status?: string;
   error?: string;
+  retryCount?: number;
 }
 
-export async function executeLiFiBridge(
+/**
+ * Sleep utility for retry delays
+ */
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Estimate gas cost for bridge transaction
+ */
+async function estimateGasCost(
   quote: BridgeQuote,
   signer: ethers.Signer
+): Promise<{ sufficient: boolean; balance: bigint; estimated: bigint }> {
+  const balance = await signer.provider!.getBalance(await signer.getAddress());
+  const estimatedGas = ethers.parseEther("0.005"); // ~0.005 ETH conservative estimate
+  return {
+    sufficient: balance >= estimatedGas,
+    balance,
+    estimated: estimatedGas,
+  };
+}
+
+/**
+ * Execute LI.FI bridge with retry logic and error handling
+ */
+export async function executeLiFiBridge(
+  quote: BridgeQuote,
+  signer: ethers.Signer,
+  options?: {
+    maxRetries?: number;
+    timeoutMs?: number;
+  }
 ): Promise<BridgeExecutionResult> {
-  console.log("\n  🌉 Executing LI.FI Bridge...");
+  const maxRetries = options?.maxRetries || 3;
+  const timeoutMs = options?.timeoutMs || 120000; // 2 minutes
   
-  try {
-    // Check if this is a simulated quote
-    if (quote.bridgeUsed.includes("simulated")) {
-      console.log("  ⚠️  Simulated bridge - no actual execution");
-      return {
-        success: true,
-        txHash: "0x" + "0".repeat(64) + "_SIMULATED",
-        status: "DONE (simulated)",
-      };
-    }
-
-    // Configure SDK with signer
-    const privateKey = process.env.PRIVATE_KEY;
-    if (!privateKey) {
-      throw new Error("PRIVATE_KEY not configured");
-    }
-
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
-    
-    createConfig({
-      integrator: "UniFlux-SafeHarbor",
-      providers: [
-        EVM({
-          getWalletClient: async () =>
-            createWalletClient({
-              account,
-              chain: base,
-              transport: http(CHAIN_CONFIG.DESTINATION.rpcUrl),
-            }),
-        }),
-      ],
-    });
-
-    // Execute the route (cast to any for SDK compatibility - LiFiStep works at runtime)
-    const execution = await executeRoute(quote.route as any, {
-      // Status update callback
-      updateRouteHook: (route) => {
-        console.log(`  📡 Bridge status: ${route.steps[0]?.execution?.status || 'pending'}`);
-      },
-    });
-
-    // Get transaction hash from execution
-    const txHash = execution.steps[0]?.execution?.process?.[0]?.txHash;
-    
-    console.log(`  ✅ Bridge initiated: ${txHash?.slice(0, 20)}...`);
-    
+  console.log("\n  🌉 Executing LI.FI Bridge...");
+  console.log(`     Max retries: ${maxRetries}, Timeout: ${timeoutMs / 1000}s`);
+  
+  // Check if this is a simulated quote
+  if (quote.bridgeUsed.includes("simulated")) {
+    console.log("  ⚠️  Simulated bridge - no actual execution");
     return {
       success: true,
-      txHash,
-      status: "PENDING",
+      txHash: "0x" + "0".repeat(64) + "_SIMULATED",
+      status: "DONE (simulated)",
+      retryCount: 0,
     };
-  } catch (error: any) {
-    console.error("  ❌ Bridge execution failed:", error.message);
+  }
+
+  // Validate gas balance before execution
+  const gasCheck = await estimateGasCost(quote, signer);
+  if (!gasCheck.sufficient) {
+    const needed = ethers.formatEther(gasCheck.estimated);
+    const have = ethers.formatEther(gasCheck.balance);
+    console.error(`  ❌ Insufficient gas: need ~${needed} ETH, have ${have} ETH`);
     return {
       success: false,
-      error: error.message,
+      error: `Insufficient gas: need ~${needed} ETH, have ${have} ETH`,
     };
+  }
+  console.log(`  ✅ Gas check passed: ${ethers.formatEther(gasCheck.balance)} ETH available`);
+
+  // Retry loop with exponential backoff
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`\n  📤 Attempt ${attempt}/${maxRetries}...`);
+      
+      // Configure SDK with signer
+      const privateKey = process.env.PRIVATE_KEY;
+      if (!privateKey) {
+        throw new Error("PRIVATE_KEY not configured");
+      }
+
+      const account = privateKeyToAccount(privateKey as `0x${string}`);
+      
+      createConfig({
+        integrator: "UniFlux-SafeHarbor",
+        providers: [
+          EVM({
+            getWalletClient: async () =>
+              createWalletClient({
+                account,
+                chain: base,
+                transport: http(CHAIN_CONFIG.DESTINATION.rpcUrl),
+              }),
+          }),
+        ],
+      });
+
+      // Execute with timeout
+      const executionPromise = executeRoute(quote.route as any, {
+        updateRouteHook: (route) => {
+          const status = route.steps[0]?.execution?.status || 'pending';
+          console.log(`  📡 Bridge status: ${status}`);
+        },
+      });
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Bridge execution timeout")), timeoutMs)
+      );
+
+      const execution = await Promise.race([executionPromise, timeoutPromise]) as any;
+
+      // Get transaction hash from execution
+      const txHash = execution.steps[0]?.execution?.process?.[0]?.txHash;
+      
+      if (!txHash) {
+        throw new Error("No transaction hash returned from bridge");
+      }
+
+      console.log(`  ✅ Bridge initiated: ${txHash.slice(0, 20)}...`);
+      
+      return {
+        success: true,
+        txHash,
+        status: "PENDING",
+        retryCount: attempt - 1,
+      };
+      
+    } catch (error: any) {
+      console.error(`  ⚠️  Attempt ${attempt} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        console.error("  ❌ All retry attempts exhausted");
+        return {
+          success: false,
+          error: `Bridge failed after ${maxRetries} attempts: ${error.message}`,
+          retryCount: maxRetries,
+        };
+      }
+      
+      // Exponential backoff: 2^attempt seconds
+      const backoffMs = Math.pow(2, attempt) * 1000;
+      console.log(`  ⏳ Waiting ${backoffMs / 1000}s before retry...`);
+      await sleep(backoffMs);
+      
+      // Try to get alternative route for next attempt
+      console.log("  🔄 Fetching alternative route...");
+      const alternativeQuote = await getAlternativeRoute(quote);
+      if (alternativeQuote) {
+        quote = alternativeQuote;
+        console.log(`  ✅ Using alternative bridge: ${quote.bridgeUsed}`);
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: "Unexpected error in bridge execution",
+  };
+}
+
+/**
+ * Try to get an alternative bridge route
+ */
+async function getAlternativeRoute(
+  originalQuote: BridgeQuote
+): Promise<BridgeQuote | null> {
+  try {
+    // Exclude the failed bridge from options
+    const excludeBridges = [originalQuote.bridgeUsed.split(" ")[0]];
+    const allowBridges = ["across", "stargate", "hop", "cbridge", "multichain"]
+      .filter(b => !excludeBridges.includes(b));
+
+    const alternative = await getLiFiBridgeQuote(
+      originalQuote.fromAmount,
+      process.env.WALLET_ADDRESS || "0x0",
+      {
+        slippage: originalQuote.slippage,
+        allowBridges,
+      }
+    );
+
+    return alternative;
+  } catch {
+    return null;
   }
 }
 

@@ -38,6 +38,7 @@ function App() {
   const [isLive, setIsLive] = useState(false)
   const [_error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isExecuting, setIsExecuting] = useState(false)
   const [commandHistory, setCommandHistory] = useState<string[]>([])
   const [terminalOutput, setTerminalOutput] = useState<string[]>([])
   const [currentCommand, setCurrentCommand] = useState('')
@@ -118,17 +119,15 @@ function App() {
     return () => clearInterval(interval)
   }, [refreshState, addOutput])
 
-  // Auto-scroll terminal (only if near bottom)
+  // Auto-scroll terminal to bottom when output changes
   useEffect(() => {
-    if (terminalRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = terminalRef.current
-      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
-      
-      if (isNearBottom) {
-        terminalRef.current.scrollTop = scrollHeight
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      if (terminalRef.current) {
+        terminalRef.current.scrollTop = terminalRef.current.scrollHeight
       }
-    }
-  }, [terminalOutput])
+    })
+  }, [terminalOutput, currentCommand])
 
   // Focus input on click
   const focusInput = () => {
@@ -143,17 +142,24 @@ function App() {
     addOutput(`uniflux@sepolia:~$ ${cmd}`)
     setCommandHistory(prev => [...prev, cmd])
     setHistoryIndex(-1)
+    
+    // Set executing state for async commands
+    const asyncCommands = ['tick', 'add', 'remove', 'evacuate', 'safeharbor', 'quote', 'evac-test', 'mev']
+    if (asyncCommands.includes(command)) {
+      setIsExecuting(true)
+    }
 
-    switch (command) {
-      case '':
-        break
+    try {
+      switch (command) {
+        case '':
+          break
 
-      case 'help':
-        addOutput([
-          '',
-          '┌─────────────────────────────────────────────────────────────┐',
-          '│                    AVAILABLE COMMANDS                       │',
-          '├─────────────────────────────────────────────────────────────┤',
+        case 'help':
+          addOutput([
+            '',
+            '┌─────────────────────────────────────────────────────────────┐',
+            '│                    AVAILABLE COMMANDS                       │',
+            '├─────────────────────────────────────────────────────────────┤',
           '│  status      - Display current agent state                  │',
           '│  tick        - Execute observe → decide → act cycle         │',
           '│  balances    - Show token balances                          │',
@@ -396,36 +402,47 @@ function App() {
         ])
         addOutput('[....] Step 1: Getting LI.FI bridge quote...')
         try {
-          const quote = await getEvacuationQuote()
+          const quoteResult = await getEvacuationQuote()
+          if (!quoteResult.success || !quoteResult.quote) {
+            addOutput([`[FAILED] Quote failed: ${quoteResult.error || 'Unknown error'}`, ''])
+            break
+          }
+          const quote = quoteResult.quote
           addOutput([
             '[  OK  ] Quote received:',
-            `         From: ${quote.fromChain} (${quote.fromToken})`,
-            `         To:   ${quote.toChain} (${quote.toToken})`,
-            `         Amount: ${quote.amountIn} → ${quote.amountOut}`,
-            `         Bridge: ${quote.bridge || 'LI.FI Optimal'}`,
+            `         From: Chain ${quote.fromChain} (${quote.fromToken.slice(0, 10)}...)`,
+            `         To:   Chain ${quote.toChain} (${quote.toToken.slice(0, 10)}...)`,
+            `         Amount: ${(parseFloat(quote.fromAmount) / 1e6).toFixed(2)} → ~${(parseFloat(quote.estimatedOutput) / 1e6).toFixed(2)} USDC`,
+            `         Bridge: ${quote.bridgeUsed}`,
+            `         Est. Time: ~${Math.round(quote.estimatedTime / 60)} min`,
             ''
           ])
           addOutput('[....] Step 2: Executing bridge transaction...')
-          const result = await executeEvacuation()
+          const result = await executeEvacuation(0.01)
           
-          if (result.success) {
+          if (result.success && result.status) {
+            const txHash = result.status.bridge?.txHash || 'Pending...'
+            const explorerUrl = result.explorerUrls?.bridge || `https://explorer.li.fi/tx/${txHash}`
             addOutput([
               '[  OK  ] Evacuation complete!',
               '',
               '┌─── EVACUATION RESULT ────────────────────────────────────────┐',
-              `│  Status:     ${result.status.padEnd(47)}│`,
-              `│  TX Hash:    ${(result.txHash || 'N/A').slice(0, 42).padEnd(47)}│`,
-              `│  Bridge TX:  ${(result.bridgeTxHash || 'N/A').slice(0, 42).padEnd(47)}│`,
+              `│  Step:       ${result.status.step.padEnd(47)}│`,
+              `│  Bridge:     ${(result.status.bridge?.bridgeUsed || 'LI.FI').padEnd(47)}│`,
+              `│  Time:       ${((result.executionTime || 0) + 's').padEnd(47)}│`,
               '├──────────────────────────────────────────────────────────────┤',
-              '│  ✅ Assets safely deposited in Aave V3 on Base              │',
-              '│  📊 Earning yield while protected from MEV                   │',
+              `│  TX Hash:    ${txHash.slice(0, 42).padEnd(47)}│`,
+              '├──────────────────────────────────────────────────────────────┤',
+              '│  ✅ Assets safely transferred via LI.FI                      │',
+              '│  📊 Destination: Aave V3 on Base                             │',
               '└──────────────────────────────────────────────────────────────┘',
+              '',
+              `🔗 Explorer: ${explorerUrl}`,
               ''
             ])
           } else {
             addOutput([
               `[FAILED] Evacuation failed: ${result.error || 'Unknown error'}`,
-              `         Status: ${result.status}`,
               ''
             ])
           }
@@ -438,21 +455,27 @@ function App() {
       case 'quote':
         addOutput('[....] Fetching LI.FI bridge quote...')
         try {
-          const quote = await getEvacuationQuote()
+          const quoteResult = await getEvacuationQuote()
+          if (!quoteResult.success || !quoteResult.quote) {
+            addOutput([`[FAILED] Quote failed: ${quoteResult.error || 'Unknown error'}`, ''])
+            break
+          }
+          const quote = quoteResult.quote
           addOutput([
             '',
             '┌─── LI.FI BRIDGE QUOTE ───────────────────────────────────────┐',
-            `│  Source Chain:     ${quote.fromChain.padEnd(40)}│`,
-            `│  Source Token:     ${quote.fromToken.padEnd(40)}│`,
-            `│  Amount In:        ${quote.amountIn.padEnd(40)}│`,
+            `│  Source Chain:     ${'Chain ' + quote.fromChain.toString().padEnd(35)}│`,
+            `│  Source Token:     ${quote.fromToken.slice(0, 40).padEnd(40)}│`,
+            `│  Amount In:        ${((parseFloat(quote.fromAmount) / 1e6).toFixed(2) + ' USDC').padEnd(40)}│`,
             '├──────────────────────────────────────────────────────────────┤',
-            `│  Dest Chain:       ${quote.toChain.padEnd(40)}│`,
-            `│  Dest Token:       ${quote.toToken.padEnd(40)}│`,
-            `│  Amount Out:       ${quote.amountOut.padEnd(40)}│`,
+            `│  Dest Chain:       ${'Chain ' + quote.toChain.toString().padEnd(35)}│`,
+            `│  Dest Token:       ${quote.toToken.slice(0, 40).padEnd(40)}│`,
+            `│  Amount Out:       ${('~' + (parseFloat(quote.estimatedOutput) / 1e6).toFixed(2) + ' USDC').padEnd(40)}│`,
             '├──────────────────────────────────────────────────────────────┤',
-            `│  Bridge:           ${(quote.bridge || 'LI.FI Optimal').padEnd(40)}│`,
-            `│  Slippage:         ${(quote.slippage || '1%').padEnd(40)}│`,
-            `│  Est. Time:        ${(quote.estimatedTime || '~5 min').padEnd(40)}│`,
+            `│  Bridge:           ${quote.bridgeUsed.padEnd(40)}│`,
+            `│  Slippage:         ${((quote.slippage * 100).toFixed(1) + '%').padEnd(40)}│`,
+            `│  Est. Time:        ${('~' + Math.round(quote.estimatedTime / 60) + ' min').padEnd(40)}│`,
+            `│  Gas Cost:         ${'$' + quote.gasCostUSD.padEnd(39)}│`,
             '└──────────────────────────────────────────────────────────────┘',
             ''
           ])
@@ -524,10 +547,14 @@ function App() {
       default:
         addOutput([`[ERROR] Unknown command: ${command}. Type "help" for available commands.`, ''])
     }
+    } finally {
+      // Always reset executing state when command completes
+      setIsExecuting(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !isExecuting) {
       executeCommand(currentCommand)
       setCurrentCommand('')
     } else if (e.key === 'ArrowUp') {
@@ -552,10 +579,10 @@ function App() {
 
   return (
     <div 
-      className="h-screen bg-[#131313] p-4 font-mono text-white flex items-center justify-center overflow-hidden"
+      className="h-screen bg-[#131313] p-4 font-mono text-white flex items-center justify-center overflow-hidden fixed inset-0"
     >
       {/* Terminal Window */}
-      <div className="w-full max-w-4xl h-full max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-4xl h-full max-h-[90vh] flex flex-col overflow-hidden">
         {/* Title Bar */}
         <div className="bg-[#1B1B1B] border border-[#2D2D2D] rounded-t-2xl px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
@@ -571,10 +598,10 @@ function App() {
           </div>
         </div>
 
-        {/* Terminal Body */}
+        {/* Terminal Body - Output Only */}
         <div 
           ref={terminalRef}
-          className="bg-[#191919] border-x border-[#2D2D2D] p-4 overflow-y-auto font-mono text-sm flex-1"
+          className="bg-[#191919] border-x border-[#2D2D2D] p-4 pb-0 overflow-y-auto overflow-x-hidden font-mono text-sm flex-1 min-h-0"
           onClick={focusInput}
         >
           {/* Output */}
@@ -592,10 +619,15 @@ function App() {
               {renderLineWithLinks(line)}
             </div>
           ))}
+        </div>
 
-          {/* Input Line */}
-          {!loading && (
-            <div className="flex items-center mt-1">
+        {/* Input Line - Fixed at bottom of terminal body */}
+        <div 
+          className="bg-[#191919] border-x border-[#2D2D2D] px-4 py-2 flex-shrink-0"
+          onClick={focusInput}
+        >
+          {!loading && !isExecuting ? (
+            <div className="flex items-center font-mono text-sm">
               <span className="text-[#FF007A]">uniflux@sepolia:~$</span>
               <span className="ml-2 text-white">{currentCommand}</span>
               <span className="cursor-blink ml-0.5 w-2 h-4 bg-[#FF007A] inline-block"></span>
@@ -609,12 +641,9 @@ function App() {
                 autoFocus
               />
             </div>
-          )}
-
-          {/* Loading indicator */}
-          {loading && (
-            <div className="flex items-center text-[#FC72FF]">
-              <span className="cursor-blink">_</span>
+          ) : (
+            <div className="flex items-center text-[#FC72FF] font-mono text-sm">
+              <span className="animate-pulse">⟳ executing...</span>
             </div>
           )}
         </div>
