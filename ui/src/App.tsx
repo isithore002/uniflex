@@ -332,7 +332,6 @@ function App() {
             `│  Auto Mode:   ${autoMode.padEnd(47)}│`,
             `│  Cycle #:     ${String(cycleCount).padEnd(47)}│`,
             `│  Last Action: ${lastDecision.padEnd(47)}│`,
-            `│  DRY_RUN:     ${dryRun.padEnd(47)}│`,
             '└───────────────────────────────────────────────────────────────┘',
             ''
           ])
@@ -424,14 +423,10 @@ function App() {
           addOutput('[....] Fetching MEV protection stats...')
           const mevStats = await fetchMevStats()
           addOutput([
-            '[  OK  ] MEV stats retrieved',
+            '[  OK  ] MEV protection stats',
             '',
-            '┌─── MEV PROTECTION (SANDWICH DETECTOR V2) ────────────────────┐',
-            `│  Attacks Detected:  ${String(mevStats.detected).padEnd(41)}│`,
-            `│  Victims Refunded:  ${String(mevStats.refunded).padEnd(41)}│`,
-            `│  Treasury Balance:  ${mevStats.treasury.padEnd(41)}│`,
-            `│  Avg Refund Rate:   ${(mevStats.avgRefundRate * 100).toFixed(1)}%`.padEnd(63) + '│',
-            '└───────────────────────────────────────────────────────────────┘',
+            `Attacks detected: ${mevStats.detected}`,
+            `Victims refunded: ${mevStats.refunded}`,
             ''
           ])
         } catch {
@@ -914,7 +909,7 @@ function App() {
             {agentStatus?.safetyConfig?.dryRunEnabled && (
               <>
                 <span className="text-[#2D2D2D]">|</span>
-                <span className="text-[#00A3FF]">🧪 SIM</span>
+                <span className="text-[#00A3FF]"></span>
               </>
             )}
           </span>
