@@ -1,17 +1,24 @@
 # UniFlux Agent
 
+> 🚀 **Production-Ready Autonomous Agent**  
+> - Runs 24/7 with full observe-decide-act loop  
+> - LI.FI cross-chain simulation complete (real execution gated by env vars)  
+> - Safety: DRY_RUN + cooldown + amount caps + explicit EXECUTE_REAL_BRIDGE flag
+> - MEV Protection: Automatic liquidity removal on sandwich detection
+
 Autonomous Liquidity Maintenance Agent for Uniswap v4 with Cross-Chain capabilities via LI.FI.
 
 ## 🎯 Strategy
 
 **Deterministic Multi-Chain Rebalancing Agent**
 
-1. **Observe** → Read token balances in the v4 PoolManager
-2. **Decide** → Based on imbalance:
+1. **Observe** → Read token balances in the v4 PoolManager + monitor volatility
+2. **Decide** → Based on imbalance and MEV risk:
    - `< 10%` → NOOP (pool healthy)
    - `10-25%` → LOCAL SWAP (rebalance via Uniswap v4)
-   - `> 25%` → CROSS-CHAIN (evacuate liquidity via LI.FI)
-3. **Act** → Execute swap locally or bridge cross-chain
+   - `> 25%` → CROSS_CHAIN (evacuate liquidity via LI.FI)
+   - `Sandwich detected` → REMOVE_LIQUIDITY (MEV protection)
+3. **Act** → Execute swap locally, bridge cross-chain, or remove liquidity
 
 This is a composable, auditable agent with no ML/hype—just reliable finance automation.
 
@@ -21,11 +28,131 @@ This is a composable, auditable agent with no ML/hype—just reliable finance au
 agent/
 ├── src/
 │   ├── index.ts      # Agent loop entry point
+│   ├── server.ts     # Express API + autonomous loop
+│   ├── agent.ts      # Core O→D→A tick logic
 │   ├── observe.ts    # Reads onchain state (real balances)
-│   ├── decide.ts     # Pure deterministic logic
-│   ├── act.ts        # Calls SwapHelper or LI.FI bridge
-│   └── lifi.ts       # LI.FI SDK integration
+│   ├── decide.ts     # Pure deterministic logic + MEV detection
+│   ├── act.ts        # Calls SwapHelper, LI.FI bridge, or remove liquidity
+│   ├── lifi.ts       # LI.FI SDK integration with safety gates
+│   ├── liquidity.ts  # Add/remove liquidity operations
+│   └── mev-listener.ts # Sandwich attack detection
 └── README.md
+```
+
+## ☁️ Production Deployment
+
+### Environment Variables
+
+```bash
+# ═══════════════════════════════════════════════════════════════
+# REQUIRED
+# ═══════════════════════════════════════════════════════════════
+SEPOLIA_RPC_URL=https://sepolia.unichain.org   # Unichain Sepolia RPC
+PRIVATE_KEY=0x...                               # Agent wallet (use secrets manager!)
+POOL_MANAGER_ADDRESS=0xD49236Bb296e8935dC302De0cccFDf5EC5413157
+TOKEN_A_ADDRESS=0x...                           # mETH
+TOKEN_B_ADDRESS=0x...                           # mUSDC
+SWAP_HELPER_ADDRESS=0xB1e1c081D5FB009D8f908b220D902E9F98dfbFE7
+LIQUIDITY_HELPER_ADDRESS=0x94C7f21225EA17916DD99437869Ac5E90F3CDBf5
+SANDWICH_DETECTOR_ADDRESS=0x3d65a5E73d43B5D20Afe7484eecC5D1364e3dEd6
+
+# ═══════════════════════════════════════════════════════════════
+# AUTONOMOUS MODE
+# ═══════════════════════════════════════════════════════════════
+AUTO_MODE=true                # Enable autonomous cycling (required for 24/7)
+POLL_INTERVAL_MS=5000         # Cycle interval (default: 5 seconds)
+AGENT_PORT=3001               # Express server port
+
+# ═══════════════════════════════════════════════════════════════
+# SAFETY GATES (Critical for production!)
+# ═══════════════════════════════════════════════════════════════
+DRY_RUN=true                  # Default: true – logs actions without sending txs
+EXECUTE_REAL_BRIDGE=false     # Set to true ONLY when ready for real bridge txs
+MAX_BRIDGE_AMOUNT_USD=10      # Hard cap on bridge amount ($10 default)
+BRIDGE_COOLDOWN_MS=1800000    # 30 minutes between bridge attempts
+```
+
+### Deploy to Railway (Recommended)
+
+1. **Push to GitHub**
+   ```bash
+   git add .
+   git commit -m "Production-ready autonomous agent"
+   git push
+   ```
+
+2. **Create Railway Project**
+   - Go to [railway.app](https://railway.app)
+   - New Project → Deploy from GitHub
+   - Select your repo → `/uniflux/agent` directory
+
+3. **Configure Service**
+   - Service Type: **Background Worker** (or Web Service)
+   - Start Command: `npm run server:auto` or `AUTO_MODE=true npx tsx src/server.ts`
+
+4. **Add Environment Variables**
+   - Copy all variables from above
+   - Use Railway's secrets manager for `PRIVATE_KEY`
+   - Start with `DRY_RUN=true` (safe mode)
+
+5. **Deploy & Monitor**
+   ```bash
+   # Check health endpoint
+   curl https://your-project.up.railway.app/health
+   ```
+
+### Health Endpoint Response
+
+```json
+{
+  "status": "ok",
+  "agent": "UniFlux",
+  "network": "Sepolia",
+  "mode": "autonomous",
+  "autonomous": {
+    "enabled": true,
+    "running": true,
+    "pollIntervalMs": 5000,
+    "cycleCount": 42,
+    "lastCycle": "2026-02-07T15:33:37Z",
+    "lastCycleSuccess": true
+  },
+  "bridge": {
+    "lastAttempt": {
+      "timestamp": "2026-02-07T15:33:37Z",
+      "mode": "simulation",
+      "status": "success",
+      "quote": {
+        "fromChain": 42161,
+        "toChain": 8453,
+        "bridgeUsed": "across",
+        "estimatedOutput": "0.99",
+        "gasCostUSD": "0.01"
+      }
+    },
+    "cooldownRemaining": 0,
+    "safetyConfig": {
+      "dryRunEnabled": true,
+      "realExecutionEnabled": false,
+      "maxAmountUSD": 10
+    }
+  },
+  "timestamp": "2026-02-07T15:33:37Z"
+}
+```
+
+### Going Live (After Verification)
+
+Once you've monitored simulation mode for several hours:
+
+```bash
+# Enable real execution (⚠️ Only after thorough testing!)
+DRY_RUN=false
+EXECUTE_REAL_BRIDGE=true
+MAX_BRIDGE_AMOUNT_USD=1   # Start very small
+
+# Fund wallet with test amount
+# e.g., 0.01 USDC on Arbitrum mainnet
 ```
 
 ## 🚀 Quick Start

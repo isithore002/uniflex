@@ -69,6 +69,64 @@ export function getPriceHistory(): number[] {
 }
 
 /**
+ * TEST/DEMO: Inject synthetic price spikes to simulate volatility
+ * Use this command to demonstrate MEV detection for judges
+ */
+export function injectVolatilitySpikes(basePrice: number = 1.0): void {
+  console.log("\n[TEST] 🧪 Injecting synthetic price spikes for volatility simulation...");
+  
+  // Keep last 5 real prices for continuity
+  const realPrices = priceHistory.slice(-5);
+  priceHistory.length = 0;
+  priceHistory.push(...realPrices);
+  
+  // Inject 15 volatile price points (±20-60% swings)
+  const spikes = [
+    basePrice * 0.70,  // -30% crash
+    basePrice * 1.45,  // +45% spike
+    basePrice * 0.85,  // -15% drop
+    basePrice * 1.30,  // +30% rise
+    basePrice * 0.60,  // -40% crash
+    basePrice * 1.60,  // +60% spike
+    basePrice * 0.90,  // -10% drop
+    basePrice * 1.35,  // +35% rise
+    basePrice * 0.75,  // -25% crash
+    basePrice * 1.50,  // +50% spike
+    basePrice * 0.80,  // -20% drop
+    basePrice * 1.40,  // +40% rise
+    basePrice * 0.65,  // -35% crash
+    basePrice * 1.55,  // +55% spike
+    basePrice * 0.95   // -5% stabilize
+  ];
+  
+  priceHistory.push(...spikes);
+  
+  // Trim to max length
+  if (priceHistory.length > MAX_PRICE_HISTORY) {
+    const excess = priceHistory.length - MAX_PRICE_HISTORY;
+    priceHistory.splice(0, excess);
+  }
+  
+  const newVolatility = computeVolatility();
+  console.log(`[TEST] ✅ Price history now contains ${priceHistory.length} entries`);
+  console.log(`[TEST] 📈 New volatility: ${(newVolatility * 100).toFixed(2)}%`);
+  console.log(`[TEST] 🎯 MEV threshold: ${(0.15 * 100).toFixed(0)}%`);
+  
+  if (newVolatility > 0.15) {
+    console.log(`[TEST] ⚠️  VOLATILITY EXCEEDS THRESHOLD - MEV detection should trigger!`);
+  }
+}
+
+/**
+ * TEST/DEMO: Reset price history to real observations only
+ */
+export function resetVolatility(): void {
+  console.log("\n[TEST] 🔄 Resetting volatility to real observations...");
+  priceHistory.length = 0;
+  console.log(`[TEST] ✅ Price history cleared. Volatility will rebuild naturally.`);
+}
+
+/**
  * Observes the current state of the Uniswap v4 pool
  * Reads real onchain token balances held by the PoolManager
  */

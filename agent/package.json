@@ -7,6 +7,9 @@
     "start": "ts-node src/index.ts",
     "start:loop": "ts-node src/index.ts --loop",
     "server": "tsx src/server.ts",
+    "server:auto": "AUTO_MODE=true tsx src/server.ts",
+    "server:auto:win": "set AUTO_MODE=true && tsx src/server.ts",
+    "prod": "AUTO_MODE=true node --loader tsx src/server.ts",
     "test": "tsx src/test-e2e.ts",
     "test:e2e": "tsx src/test-e2e.ts"
   },

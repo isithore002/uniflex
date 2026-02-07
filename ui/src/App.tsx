@@ -3,6 +3,7 @@ import './App.css'
 import { fetchAgentState, checkAgentHealth, runAgentTick, addLiquidity, removeLiquidity, fetchMevStats, getEvacuationQuote, executeEvacuation, testEvacuation } from './lib/agent'
 import type { AgentState, TimelineEntry } from './lib/agent'
 import { useUnifluxEns } from './hooks/useEns'
+import { useAgentStatus } from './hooks/useAgentStatus'
 
 // Helper to render line with clickable links
 function renderLineWithLinks(line: string): React.ReactNode {
@@ -49,6 +50,9 @@ function App() {
   // Dynamic ENS resolution (not hard-coded!)
   // Verifies on-chain that uniflux.eth → our wallet address
   const { displayName: ensName, isLoading: ensLoading, isVerified: ensVerified } = useUnifluxEns()
+  
+  // Real-time agent status polling (updates every 5 seconds)
+  const { status: agentStatus, isConnected: agentConnected } = useAgentStatus()
 
   const addOutput = useCallback((lines: string | string[]) => {
     const newLines = Array.isArray(lines) ? lines : [lines]
@@ -101,6 +105,26 @@ function App() {
         addOutput('[  OK  ] Agent server connection established')
         await refreshState()
         addOutput('[  OK  ] On-chain state synchronized')
+        
+        // Check for autonomous mode via /status endpoint
+        try {
+          const statusRes = await fetch('http://localhost:3001/status')
+          if (statusRes.ok) {
+            const status = await statusRes.json()
+            if (status.autonomous?.running) {
+              addOutput('')
+              addOutput('┌─────────────────────────────────────────────────────────────┐')
+              addOutput('│  🚀 AUTONOMOUS MODE ACTIVE                                  │')
+              addOutput('│  Agent is running O→D→A cycles automatically               │')
+              addOutput(`│  Current cycle: #${String(status.autonomous.cycleCount || 0).padEnd(42)}│`)
+              addOutput(`│  Safety mode: ${status.safetyConfig?.dryRunEnabled ? '🧪 SIMULATION' : '⚡ LIVE'.padEnd(46)}│`)
+              addOutput('└─────────────────────────────────────────────────────────────┘')
+            }
+          }
+        } catch (e) {
+          // /status endpoint may not exist, ignore
+        }
+        
         addOutput('')
         addOutput('Type "help" for available commands.')
         addOutput('')
@@ -118,6 +142,47 @@ function App() {
     const interval = setInterval(refreshState, 5000)
     return () => clearInterval(interval)
   }, [refreshState, addOutput])
+
+  // Track last cycle count to detect new cycles
+  const lastCycleRef = useRef<number>(0);
+  
+  // Output autonomous cycle updates to terminal
+  useEffect(() => {
+    if (!agentStatus?.autonomous?.running) return;
+    
+    const currentCycle = agentStatus.autonomous.cycleCount || 0;
+    
+    // Only output when cycle count increases
+    if (currentCycle > lastCycleRef.current && lastCycleRef.current > 0) {
+      const decision = agentStatus.lastAction?.decision || 'NOOP';
+      const reason = agentStatus.lastAction?.reason || '';
+      const deviation = agentStatus.poolState?.deviation?.toFixed(1) || '0';
+      const mUSDC = parseFloat(agentStatus.poolState?.mUSDC || '0').toFixed(4);
+      const mETH = parseFloat(agentStatus.poolState?.mETH || '0').toFixed(4);
+      const timestamp = new Date().toLocaleTimeString();
+      
+      // Color-code the decision
+      const decisionLabel = decision === 'NOOP' ? '[  OK  ]' :
+                           decision === 'LOCAL_SWAP' ? '[SWAP ]' :
+                           decision === 'CROSS_CHAIN' ? '[BRIDGE]' :
+                           decision === 'REMOVE_LIQUIDITY' ? '[REMOVE]' : '[INFO]';
+      
+      addOutput([
+        ``,
+        `┌─── AUTONOMOUS CYCLE #${currentCycle} ─────────────────────────────────┐`,
+        `│  Time: ${timestamp.padEnd(53)}│`,
+        `│  Decision: ${decision.padEnd(49)}│`,
+        `│  Reason: ${reason.substring(0, 50).padEnd(51)}│`,
+        `├─── Pool State ──────────────────────────────────────────────┤`,
+        `│  mUSDC: ${mUSDC.padEnd(52)}│`,
+        `│  mETH: ${mETH.padEnd(53)}│`,
+        `│  Deviation: ${(deviation + '%').padEnd(48)}│`,
+        `└─────────────────────────────────────────────────────────────┘`,
+      ]);
+    }
+    
+    lastCycleRef.current = currentCycle;
+  }, [agentStatus?.autonomous?.cycleCount, agentStatus, addOutput]);
 
   // Auto-scroll terminal to bottom when output changes
   useEffect(() => {
@@ -144,7 +209,7 @@ function App() {
     setHistoryIndex(-1)
     
     // Set executing state for async commands
-    const asyncCommands = ['tick', 'add', 'remove', 'evacuate', 'safeharbor', 'quote', 'evac-test', 'mev']
+    const asyncCommands = ['tick', 'add', 'remove', 'evacuate', 'safeharbor', 'quote', 'evac-test', 'mev', 'run', 'stop']
     if (asyncCommands.includes(command)) {
       setIsExecuting(true)
     }
@@ -160,8 +225,11 @@ function App() {
             '┌─────────────────────────────────────────────────────────────┐',
             '│                    AVAILABLE COMMANDS                       │',
             '├─────────────────────────────────────────────────────────────┤',
+          '│  run         - Start autonomous O→D→A loop                  │',
+          '│  stop        - Stop autonomous mode                         │',
           '│  status      - Display current agent state                  │',
-          '│  tick        - Execute observe → decide → act cycle         │',
+          '│  tick        - Execute single observe → decide → act cycle  │',
+          '├─────────────────────────────────────────────────────────────┤',
           '│  balances    - Show token balances                          │',
           '│  pool        - Show pool manager contract info              │',
           '│  timeline    - Show recent agent activity                   │',
@@ -170,6 +238,11 @@ function App() {
           '│  add <amt>   - Add liquidity (e.g., add 100)               │',
           '│  remove <amt>- Remove liquidity (e.g., remove 50)          │',
           '│  config      - Display agent configuration                  │',
+          '├─────────────────────────────────────────────────────────────┤',
+          '│  TEST/DEMO COMMANDS (for judge presentations)               │',
+          '│  simulate-volatility - Inject price spikes for MEV demo    │',
+          '│  reset-volatility    - Clear synthetic prices               │',
+          '│  check-volatility    - Show current volatility stats        │',
           '├─────────────────────────────────────────────────────────────┤',
           '│  SAFE HARBOR (LI.FI Integration)                            │',
           '│  evacuate    - Execute Safe Harbor evacuation               │',
@@ -183,6 +256,52 @@ function App() {
         ])
         break
 
+      case 'run':
+        addOutput('[....] Starting autonomous mode...')
+        try {
+          const res = await fetch('http://localhost:3001/autonomous/start', { method: 'POST' })
+          const data = await res.json()
+          if (data.success) {
+            addOutput([
+              '[  OK  ] Autonomous mode started!',
+              '',
+              '┌─────────────────────────────────────────────────────────────┐',
+              '│  🚀 AUTONOMOUS MODE ACTIVE                                  │',
+              '│  Agent is running O→D→A cycles automatically               │',
+              `│  Poll interval: ${String(data.pollInterval / 1000 + 's').padEnd(44)}│`,
+              '│  Type "stop" to halt autonomous execution                  │',
+              '└─────────────────────────────────────────────────────────────┘',
+              ''
+            ])
+          } else {
+            addOutput(`[ERROR] ${data.message || 'Failed to start autonomous mode'}`)
+          }
+        } catch (err: any) {
+          addOutput(`[ERROR] ${err.message}`)
+        }
+        break
+
+      case 'stop':
+        addOutput('[....] Stopping autonomous mode...')
+        try {
+          const res = await fetch('http://localhost:3001/autonomous/stop', { method: 'POST' })
+          const data = await res.json()
+          if (data.success) {
+            addOutput([
+              '[  OK  ] Autonomous mode stopped',
+              `         Total cycles completed: ${data.cycleCount}`,
+              '',
+              '📋 Manual mode active – use "tick" for single execution or "run" to restart',
+              ''
+            ])
+          } else {
+            addOutput(`[ERROR] ${data.message || 'Failed to stop autonomous mode'}`)
+          }
+        } catch (err: any) {
+          addOutput(`[ERROR] ${err.message}`)
+        }
+        break
+
       case 'clear':
         setTerminalOutput([])
         break
@@ -193,6 +312,13 @@ function App() {
         } else {
           const statusIcon = state.isHealthy ? '●' : '○'
           const statusColor = state.isHealthy ? 'HEALTHY' : 'ACTION REQUIRED'
+          
+          // Include autonomous mode info from real-time status
+          const autoMode = agentStatus?.autonomous?.running ? 'ENABLED' : 'DISABLED'
+          const cycleCount = agentStatus?.autonomous?.cycleCount || 0
+          const lastDecision = agentStatus?.lastAction?.decision || 'N/A'
+          const dryRun = agentStatus?.safetyConfig?.dryRunEnabled ? 'ON' : 'OFF'
+          
           addOutput([
             '',
             '┌─── AGENT STATUS ─────────────────────────────────────────────┐',
@@ -202,6 +328,11 @@ function App() {
             `│  Deviation:   ${(state.deviation?.toFixed(2) + '%').padEnd(47)}│`,
             `│  Threshold:   ${(state.threshold + '%').padEnd(47)}│`,
             `│  Volatility:  ${(state.volatility?.toFixed(4) || '0').padEnd(47)}│`,
+            '├─── AUTONOMOUS MODE ──────────────────────────────────────────┤',
+            `│  Auto Mode:   ${autoMode.padEnd(47)}│`,
+            `│  Cycle #:     ${String(cycleCount).padEnd(47)}│`,
+            `│  Last Action: ${lastDecision.padEnd(47)}│`,
+            `│  DRY_RUN:     ${dryRun.padEnd(47)}│`,
             '└───────────────────────────────────────────────────────────────┘',
             ''
           ])
@@ -305,6 +436,92 @@ function App() {
           ])
         } catch {
           addOutput(['[ERROR] Failed to fetch MEV stats.', ''])
+        }
+        break
+
+      case 'simulate-volatility':
+      case 'test-sandwich':
+        addOutput('[....] Injecting synthetic price spikes...')
+        try {
+          const res = await fetch('http://localhost:3001/test/volatility', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ basePrice: 1.0 })
+          })
+          const data = await res.json()
+          if (data.success) {
+            addOutput([
+              '[  OK  ] Volatility simulation complete',
+              '',
+              '┌─── VOLATILITY SIMULATION RESULTS ────────────────────────────┐',
+              `│  🧪 TEST MODE: Synthetic price spikes injected              │`,
+              '├───────────────────────────────────────────────────────────────┤',
+              `│  Current Volatility:    ${data.volatilityPercent.padEnd(35)}│`,
+              `│  MEV Threshold:         ${data.thresholdPercent.padEnd(35)}│`,
+              `│  Price History Length:  ${String(data.priceHistoryLength).padEnd(35)}│`,
+              `│  Price Range:           ${data.priceRange.min} - ${data.priceRange.max}`.padEnd(63) + '│',
+              '├───────────────────────────────────────────────────────────────┤',
+              `│  Will Trigger MEV:      ${(data.willTriggerMEV ? '✅ YES' : '❌ NO').padEnd(35)}│`,
+              '└───────────────────────────────────────────────────────────────┘',
+              '',
+              data.willTriggerMEV 
+                ? '⚠️  Next autonomous cycle should detect sandwich pattern!'
+                : '⚠️  Volatility still below 15% threshold',
+              ''
+            ])
+          } else {
+            addOutput(`[ERROR] ${data.error || 'Failed to inject volatility'}`)
+          }
+        } catch (err: any) {
+          addOutput(`[ERROR] ${err.message}`)
+        }
+        break
+
+      case 'reset-volatility':
+        addOutput('[....] Resetting volatility to real observations...')
+        try {
+          const res = await fetch('http://localhost:3001/test/reset-volatility', { 
+            method: 'POST'
+          })
+          const data = await res.json()
+          if (data.success) {
+            addOutput([
+              '[  OK  ] Volatility reset complete',
+              '',
+              `Current volatility: ${data.volatilityPercent}`,
+              'Price history cleared - will rebuild naturally',
+              ''
+            ])
+          } else {
+            addOutput(`[ERROR] ${data.error || 'Failed to reset volatility'}`)
+          }
+        } catch (err: any) {
+          addOutput(`[ERROR] ${err.message}`)
+        }
+        break
+
+      case 'check-volatility':
+        addOutput('[....] Checking current volatility...')
+        try {
+          const res = await fetch('http://localhost:3001/test/volatility')
+          const data = await res.json()
+          if (data.success) {
+            addOutput([
+              '[  OK  ] Volatility check complete',
+              '',
+              '┌─── CURRENT VOLATILITY STATUS ────────────────────────────────┐',
+              `│  Volatility:       ${data.volatilityPercent.padEnd(42)}│`,
+              `│  MEV Threshold:    ${data.thresholdPercent.padEnd(42)}│`,
+              `│  Exceeds Threshold: ${(data.exceedsThreshold ? 'YES ✅' : 'NO ❌').padEnd(41)}│`,
+              `│  Price History:    ${String(data.priceHistoryLength) + ' prices tracked'.padEnd(42)}│`,
+              '└───────────────────────────────────────────────────────────────┘',
+              ''
+            ])
+          } else {
+            addOutput(`[ERROR] ${data.error || 'Failed to check volatility'}`)
+          }
+        } catch (err: any) {
+          addOutput(`[ERROR] ${err.message}`)
         }
         break
 
@@ -433,8 +650,8 @@ function App() {
               '├──────────────────────────────────────────────────────────────┤',
               `│  TX Hash:    ${txHash.slice(0, 42).padEnd(47)}│`,
               '├──────────────────────────────────────────────────────────────┤',
-              '│  ✅ Assets safely transferred via LI.FI                      │',
-              '│  📊 Destination: Aave V3 on Base                             │',
+              '│   Assets safely transferred via LI.FI                      │',
+              '│   Destination: Aave V3 on Base                             │',
               '└──────────────────────────────────────────────────────────────┘',
               '',
               `🔗 Explorer: ${explorerUrl}`,
@@ -648,15 +865,58 @@ function App() {
           )}
         </div>
 
-        {/* Status Bar */}
+        {/* Status Bar - with real-time autonomous status */}
         <div className="bg-[#1B1B1B] border border-t-0 border-[#2D2D2D] rounded-b-lg px-4 py-2 text-xs text-[#9B9B9B] flex justify-between flex-shrink-0">
-          <span>
+          <span className="flex items-center gap-2">
+            {/* Autonomous Mode Indicator */}
+            {agentConnected && agentStatus?.autonomous?.running ? (
+              <span className="flex items-center gap-1 text-[#21C95E]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#21C95E] animate-pulse"></span>
+                AUTO #{agentStatus.autonomous.cycleCount}
+              </span>
+            ) : agentConnected ? (
+              <span className="text-[#9B9B9B]">MANUAL</span>
+            ) : null}
+            <span className="text-[#2D2D2D]">|</span>
             ENS: {ensLoading ? 'Resolving...' : ensName}
             {ensVerified && <span className="text-[#21C95E] ml-1">✓</span>}
-            {' '}| Network: Unichain Sepolia
+            <span className="text-[#2D2D2D]">|</span>
+            Unichain Sepolia
           </span>
-          <span>
-            {state ? `Deviation: ${state.deviation?.toFixed(2)}% | Status: ${state.status}` : 'Connecting...'}
+          <span className="flex items-center gap-2">
+            {/* Last Decision */}
+            {agentStatus?.lastAction?.decision && (
+              <>
+                <span className={`${
+                  agentStatus.lastAction.decision === 'NOOP' ? 'text-[#21C95E]' :
+                  agentStatus.lastAction.decision === 'LOCAL_SWAP' ? 'text-[#FFBD2E]' :
+                  agentStatus.lastAction.decision === 'CROSS_CHAIN' ? 'text-[#FC72FF]' :
+                  agentStatus.lastAction.decision === 'REMOVE_LIQUIDITY' ? 'text-[#FF4D4D]' : ''
+                }`}>
+                  {agentStatus.lastAction.decision}
+                </span>
+                <span className="text-[#2D2D2D]">|</span>
+              </>
+            )}
+            {/* Pool Deviation */}
+            {agentStatus?.poolState?.deviation !== undefined ? (
+              <span className={
+                agentStatus.poolState.deviation > 25 ? 'text-[#FF4D4D]' :
+                agentStatus.poolState.deviation > 10 ? 'text-[#FFBD2E]' :
+                'text-[#21C95E]'
+              }>
+                Dev: {agentStatus.poolState.deviation.toFixed(1)}%
+              </span>
+            ) : state ? (
+              `Deviation: ${state.deviation?.toFixed(2)}%`
+            ) : 'Connecting...'}
+            {/* Safety Mode */}
+            {agentStatus?.safetyConfig?.dryRunEnabled && (
+              <>
+                <span className="text-[#2D2D2D]">|</span>
+                <span className="text-[#00A3FF]">🧪 SIM</span>
+              </>
+            )}
           </span>
         </div>
       </div>

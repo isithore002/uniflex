@@ -171,24 +171,29 @@ export async function addLiquidity(
 /**
  * Remove liquidity from the Uniswap v4 pool
  * This is an agent-controlled operation - UI cannot set parameters
+ * @param removalAmount - Optional: specific amount to remove (for targeted deviation reduction)
  */
 export async function removeLiquidity(
   signer: ethers.Signer,
   liquidityHelperAddress: string,
   token0Address: string,
   token1Address: string,
-  source: string = "agent"
+  source: string = "agent",
+  removalAmount?: bigint
 ): Promise<LiquidityResult> {
   // Log source for judges
   if (source === "ui") {
     console.log("  📋 UI requested execution — agent parameters unchanged");
   }
 
+  // Use provided amount or default strategy amount
+  const amountToRemove = removalAmount || STRATEGY_PARAMS.liquidityAmount;
+
   try {
     console.log("\n🔥 REMOVE LIQUIDITY (Agent-Controlled)");
     console.log(`  Source: ${source}`);
     console.log(`  Tick Range: [${STRATEGY_PARAMS.tickLower}, ${STRATEGY_PARAMS.tickUpper}]`);
-    console.log(`  Liquidity: ${ethers.formatEther(STRATEGY_PARAMS.liquidityAmount)} units`);
+    console.log(`  Liquidity: ${ethers.formatEther(amountToRemove)} units ${removalAmount ? '(calculated for 5% deviation reduction)' : '(default)'}`);
 
     // Verify connection first
     const signerAddress = await Promise.race([
@@ -222,7 +227,7 @@ export async function removeLiquidity(
         poolKey,
         STRATEGY_PARAMS.tickLower,
         STRATEGY_PARAMS.tickUpper,
-        -STRATEGY_PARAMS.liquidityAmount  // Negative = remove
+        -amountToRemove  // Negative = remove
       ),
       new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Transaction submission timeout')), 15000)
@@ -242,7 +247,7 @@ export async function removeLiquidity(
       action: "REMOVE_LIQUIDITY",
       txHash: receipt.hash,
       blockNumber: receipt.blockNumber,
-      amount: ethers.formatEther(STRATEGY_PARAMS.liquidityAmount),
+      amount: ethers.formatEther(amountToRemove),
       source
     };
 

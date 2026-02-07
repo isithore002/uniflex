@@ -165,6 +165,7 @@ interface AgentConfig {
   token0Address: string;
   token1Address: string;
   swapHelperAddress: string;
+  liquidityHelperAddress: string;
 }
 
 function getConfig(provider?: ethers.Provider): AgentConfig {
@@ -186,7 +187,8 @@ function getConfig(provider?: ethers.Provider): AgentConfig {
     poolManagerAddress: process.env.POOL_MANAGER_ADDRESS!,
     token0Address: token0,
     token1Address: token1,
-    swapHelperAddress: process.env.SWAP_HELPER_ADDRESS!
+    swapHelperAddress: process.env.SWAP_HELPER_ADDRESS!,
+    liquidityHelperAddress: process.env.LIQUIDITY_HELPER_ADDRESS!
   };
 }
 
@@ -252,7 +254,11 @@ export async function runAgentTick(options?: { manual?: boolean; provider?: ethe
   console.log(`  Reason: ${decision.reason}`);
   
   // Map decision to status
-  if (decision.action === "CROSS_CHAIN") {
+  if (decision.action === "REMOVE_LIQUIDITY") {
+    agentState.status = "REMOVE_LIQUIDITY";
+    agentState.isHealthy = false;
+    console.log(`  🛡️  MEV Protection: Removing liquidity!`);
+  } else if (decision.action === "CROSS_CHAIN") {
     agentState.status = "CROSS_CHAIN";
     agentState.isHealthy = false;
     console.log(`  🌐 Cross-chain evacuation triggered!`);
@@ -277,7 +283,8 @@ export async function runAgentTick(options?: { manual?: boolean; provider?: ethe
     config.signer,
     config.swapHelperAddress,
     config.token0Address,
-    config.token1Address
+    config.token1Address,
+    config.liquidityHelperAddress
   );
 
   // Log result
@@ -285,7 +292,22 @@ export async function runAgentTick(options?: { manual?: boolean; provider?: ethe
   let actMessage = "";
   let actTxHash: string | undefined;
 
-  if (result.actionType === "cross-chain") {
+  if (result.actionType === "remove-liquidity") {
+    // MEV Protection action
+    if (result.txHash) {
+      if (result.txHash.startsWith("DRY_RUN")) {
+        actMessage = "MEV Protection: Liquidity removal simulated (dry run)";
+        console.log(`  🧪 DRY RUN: Would remove liquidity`);
+      } else {
+        actMessage = `MEV Protection: Liquidity removed (${result.txHash.slice(0, 10)}...)`;
+        actTxHash = result.txHash;
+        console.log(`  🛡️  Liquidity Removed: ${result.txHash}`);
+      }
+    } else if (!result.success) {
+      actMessage = `MEV Protection failed: ${result.error}`;
+      console.log(`  ❌ Remove liquidity failed: ${result.error}`);
+    }
+  } else if (result.actionType === "cross-chain") {
     if (result.bridgeTxHash) {
       actMessage = `Bridge executed: ${result.bridgeTxHash.slice(0, 10)}...`;
       actTxHash = result.bridgeTxHash;

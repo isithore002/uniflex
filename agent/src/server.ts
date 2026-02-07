@@ -6,6 +6,8 @@ import { ethers } from "ethers";
 import { getAgentState, runAgentTick, refreshState, AgentState } from "./agent";
 import { addLiquidity, removeLiquidity, getStrategyParams, LiquidityResult } from "./liquidity";
 import { startMevListener, stopMevListener } from "./mev-listener";
+import { getLastBridgeAttempt, getBridgeCooldownRemaining } from "./lifi";
+import { injectVolatilitySpikes, resetVolatility, computeVolatility, getPriceHistory } from "./observe";
 import { 
   getLiFiBridgeQuote, 
   executeSafeHarborEvacuation, 
@@ -23,21 +25,52 @@ dotenv.config({ path: envPath });
 const app = express();
 const PORT = process.env.AGENT_PORT || 3001;
 
+// ═══════════════════════════════════════════════════════════════
+// AUTONOMOUS MODE CONFIGURATION
+// ═══════════════════════════════════════════════════════════════
+
+const AUTO_MODE = process.env.AUTO_MODE === 'true';
+const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
+
+// Tracking for autonomous loop
+let lastCycleTime: string | null = null;
+let cycleCount = 0;
+let lastCycleSuccess = true;
+let autonomousLoopRunning = false;
+let autonomousCycleTimer: ReturnType<typeof setTimeout> | null = null;
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // ═══════════════════════════════════════════════════════════════
-// SHARED PROVIDER INSTANCE
+// SHARED PROVIDER INSTANCE (with retry support)
 // ═══════════════════════════════════════════════════════════════
 
 let sharedProvider: ethers.JsonRpcProvider | null = null;
+let providerFailures = 0;
+const MAX_PROVIDER_FAILURES = 5;
+
+// Fallback RPCs for Unichain Sepolia
+const UNICHAIN_RPCS = [
+  process.env.SEPOLIA_RPC_URL || 'https://sepolia.unichain.org',
+  'https://sepolia.unichain.org',
+  'https://unichain-sepolia.drpc.org',
+];
 
 function getProvider(): ethers.JsonRpcProvider {
+  // If too many failures, try next RPC
+  if (sharedProvider && providerFailures >= MAX_PROVIDER_FAILURES) {
+    console.log("⚠️  Too many RPC failures, rotating to next RPC...");
+    sharedProvider = null;
+    providerFailures = 0;
+  }
+  
   if (!sharedProvider) {
-    console.log("🔌 Initializing RPC provider...");
+    const rpcUrl = UNICHAIN_RPCS[0];
+    console.log(`🔌 Initializing RPC provider: ${rpcUrl.substring(0, 40)}...`);
     sharedProvider = new ethers.JsonRpcProvider(
-      process.env.SEPOLIA_RPC_URL,
+      rpcUrl,
       {
         name: "unichain-sepolia",
         chainId: 1301
@@ -53,7 +86,7 @@ function getProvider(): ethers.JsonRpcProvider {
     // Handle provider errors (don't exit process)
     sharedProvider.on("error", (error) => {
       console.error("[Provider] Error event:", error.message);
-      // Don't throw - just log
+      providerFailures++;
     });
 
     console.log("✅ Provider initialized");
@@ -135,15 +168,255 @@ app.post("/tick", async (_, res) => {
 
 /**
  * GET /health
- * Simple health check for the agent server
+ * Health check with autonomous mode and bridge status
  */
 app.get("/health", (_, res) => {
+  const lastBridge = getLastBridgeAttempt();
+  const bridgeCooldown = getBridgeCooldownRemaining();
+
   res.json({
-    status: "ok",
+    status: lastCycleSuccess ? "ok" : "degraded",
     agent: "UniFlux",
     network: "Sepolia",
+    mode: AUTO_MODE ? "autonomous" : "manual",
+    autonomous: {
+      enabled: AUTO_MODE,
+      running: autonomousLoopRunning,
+      pollIntervalMs: POLL_INTERVAL_MS,
+      cycleCount,
+      lastCycle: lastCycleTime,
+      lastCycleSuccess
+    },
+    bridge: {
+      lastAttempt: lastBridge,
+      cooldownRemaining: bridgeCooldown,
+      safetyConfig: {
+        dryRunEnabled: process.env.DRY_RUN !== 'false',
+        realExecutionEnabled: process.env.EXECUTE_REAL_BRIDGE === 'true',
+        maxAmountUSD: parseFloat(process.env.MAX_BRIDGE_AMOUNT_USD || '10')
+      }
+    },
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * GET /status
+ * Real-time status endpoint for UI polling
+ * Returns detailed cycle info, last decision, pool state
+ */
+app.get("/status", async (_, res) => {
+  const lastBridge = getLastBridgeAttempt();
+  const bridgeCooldown = getBridgeCooldownRemaining();
+  
+  // Get current agent state
+  const agentState = getAgentState();
+
+  res.json({
+    success: true,
+    autonomous: {
+      enabled: AUTO_MODE,
+      running: autonomousLoopRunning,
+      cycleCount,
+      lastCycleTime,
+      lastCycleSuccess,
+      pollIntervalMs: POLL_INTERVAL_MS
+    },
+    currentPhase: autonomousLoopRunning ? 'RUNNING' : 'IDLE',
+    lastAction: {
+      timestamp: agentState.lastTickTimestamp || lastCycleTime,
+      decision: agentState.status,
+      reason: agentState.timeline[0]?.message || 'Waiting...',
+      actionTaken: agentState.lastAction?.type || 'None',
+      txHash: agentState.lastAction?.txHash
+    },
+    poolState: {
+      mUSDC: agentState.balances.mUSDC,
+      mETH: agentState.balances.mETH,
+      imbalanceRatio: parseFloat(agentState.balances.mUSDC) / 
+        (parseFloat(agentState.balances.mUSDC) + parseFloat(agentState.balances.mETH) || 1) * 100,
+      deviation: agentState.deviation,
+      volatility: agentState.volatility
+    },
+    lastBridgeAttempt: lastBridge,
+    bridgeCooldownRemaining: bridgeCooldown,
+    safetyConfig: {
+      dryRunEnabled: process.env.DRY_RUN !== 'false',
+      realExecutionEnabled: process.env.EXECUTE_REAL_BRIDGE === 'true',
+      maxAmountUSD: parseFloat(process.env.MAX_BRIDGE_AMOUNT_USD || '10')
+    },
+    recentActivity: agentState.timeline.slice(0, 5),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// AUTONOMOUS MODE CONTROL ENDPOINTS
+// ═══════════════════════════════════════════════════════════════
+
+// Forward declaration for the autonomous cycle function
+let runAutonomousCycleRef: (() => Promise<void>) | null = null;
+
+/**
+ * POST /autonomous/start
+ * Start autonomous O→D→A loop from UI
+ */
+app.post("/autonomous/start", async (_, res) => {
+  if (autonomousLoopRunning) {
+    return res.json({
+      success: true,
+      message: "Autonomous mode already running",
+      cycleCount,
+      running: true
+    });
+  }
+
+  console.log("\n🚀 AUTONOMOUS MODE STARTED (via API)");
+  console.log("═".repeat(60));
+  
+  autonomousLoopRunning = true;
+  
+  // Start the loop if we have the function reference
+  if (runAutonomousCycleRef) {
+    setTimeout(() => runAutonomousCycleRef?.(), 1000);
+  }
+  
+  res.json({
+    success: true,
+    message: "Autonomous mode started",
+    cycleCount,
+    running: true,
+    pollInterval: POLL_INTERVAL_MS
+  });
+});
+
+/**
+ * POST /autonomous/stop
+ * Stop autonomous O→D→A loop from UI
+ */
+app.post("/autonomous/stop", async (_, res) => {
+  if (!autonomousLoopRunning) {
+    return res.json({
+      success: true,
+      message: "Autonomous mode already stopped",
+      cycleCount,
+      running: false
+    });
+  }
+
+  console.log("\n🛑 AUTONOMOUS MODE STOPPED (via API)");
+  console.log("═".repeat(60));
+  
+  autonomousLoopRunning = false;
+  
+  // Clear any pending timer
+  if (autonomousCycleTimer) {
+    clearTimeout(autonomousCycleTimer);
+    autonomousCycleTimer = null;
+  }
+  
+  res.json({
+    success: true,
+    message: "Autonomous mode stopped",
+    cycleCount,
+    running: false
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEST/DEMO ENDPOINTS (for volatility simulation)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /test/volatility
+ * Inject synthetic price spikes to simulate MEV conditions
+ * Perfect for demo/judge presentations
+ */
+app.post("/test/volatility", async (req, res) => {
+  try {
+    const { basePrice } = req.body;
+    const price = basePrice || 1.0;
+    
+    console.log("\n🧪 [TEST] Volatility simulation requested via API");
+    injectVolatilitySpikes(price);
+    
+    const newVolatility = computeVolatility();
+    const priceHistory = getPriceHistory();
+    
+    res.json({
+      success: true,
+      message: "Synthetic volatility injected",
+      volatility: newVolatility,
+      volatilityPercent: `${(newVolatility * 100).toFixed(2)}%`,
+      threshold: 0.15,
+      thresholdPercent: "15.0%",
+      willTriggerMEV: newVolatility > 0.15,
+      priceHistoryLength: priceHistory.length,
+      priceRange: {
+        min: Math.min(...priceHistory).toFixed(4),
+        max: Math.max(...priceHistory).toFixed(4)
+      }
+    });
+  } catch (error: any) {
+    console.error("[TEST] Failed to inject volatility:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /test/reset-volatility
+ * Clear synthetic prices and return to real observations
+ */
+app.post("/test/reset-volatility", async (_, res) => {
+  try {
+    console.log("\n🔄 [TEST] Volatility reset requested via API");
+    resetVolatility();
+    
+    const currentVolatility = computeVolatility();
+    
+    res.json({
+      success: true,
+      message: "Volatility reset to real observations",
+      volatility: currentVolatility,
+      volatilityPercent: `${(currentVolatility * 100).toFixed(2)}%`
+    });
+  } catch (error: any) {
+    console.error("[TEST] Failed to reset volatility:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /test/volatility
+ * Get current volatility stats without modification
+ */
+app.get("/test/volatility", async (_, res) => {
+  try {
+    const volatility = computeVolatility();
+    const priceHistory = getPriceHistory();
+    
+    res.json({
+      success: true,
+      volatility,
+      volatilityPercent: `${(volatility * 100).toFixed(2)}%`,
+      threshold: 0.15,
+      thresholdPercent: "15.0%",
+      exceedsThreshold: volatility > 0.15,
+      priceHistoryLength: priceHistory.length,
+      priceHistory: priceHistory.map(p => p.toFixed(4))
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -547,6 +820,93 @@ const server = app.listen(PORT, () => {
   }
 
   console.log("\n⏳ Waiting for requests...\n");
+
+  // ═══════════════════════════════════════════════════════════════
+  // AUTONOMOUS MODE - Self-scheduling O→D→A loop
+  // ═══════════════════════════════════════════════════════════════
+
+  if (AUTO_MODE) {
+    console.log("═".repeat(60));
+    console.log("🚀 AUTONOMOUS MODE ENABLED");
+    console.log("═".repeat(60));
+    console.log(`   Poll Interval: ${POLL_INTERVAL_MS / 1000}s`);
+    console.log(`   Agent will run O→D→A loop automatically`);
+    console.log("═".repeat(60));
+    
+    // Display safety configuration
+    const dryRun = process.env.DRY_RUN !== 'false';
+    const realBridge = process.env.EXECUTE_REAL_BRIDGE === 'true';
+    const maxAmount = process.env.MAX_BRIDGE_AMOUNT_USD || '10';
+    
+    console.log("\n🛡️  SAFETY CONFIGURATION");
+    console.log("─".repeat(40));
+    console.log(`   DRY_RUN:              ${dryRun ? '✅ ENABLED (safe)' : '⚠️  DISABLED'}`);
+    console.log(`   EXECUTE_REAL_BRIDGE:  ${realBridge ? '⚠️  ENABLED' : '✅ DISABLED (safe)'}`);
+    console.log(`   MAX_BRIDGE_AMOUNT:    $${maxAmount}`);
+    console.log(`   Mode:                 ${dryRun || !realBridge ? '🧪 SIMULATION' : '⚡ REAL EXECUTION'}`);
+    console.log("─".repeat(40));
+    
+    if (!dryRun && realBridge) {
+      console.log("\n⚠️  WARNING: Real bridge execution is ENABLED!");
+      console.log("    Transactions will be sent to the blockchain.");
+      console.log("    Ensure wallet is funded and you understand the risks.\n");
+    }
+
+    autonomousLoopRunning = true;
+  }
+  
+  // Define autonomous cycle function (available for API start/stop)
+  let consecutiveFailures = 0;
+  
+  const runAutonomousCycle = async () => {
+    if (!autonomousLoopRunning) return;
+
+    const cycleStart = new Date().toISOString();
+    console.log(`\n[${cycleStart}] 🔄 Autonomous cycle #${cycleCount + 1} starting...`);
+
+    try {
+      const provider = getProvider();
+      await runAgentTick({ manual: false, provider });
+      
+      cycleCount++;
+      lastCycleTime = new Date().toISOString();
+      lastCycleSuccess = true;
+      consecutiveFailures = 0; // Reset on success
+      
+      console.log(`[${lastCycleTime}] ✅ Cycle #${cycleCount} completed`);
+    } catch (err: any) {
+      lastCycleTime = new Date().toISOString();
+      lastCycleSuccess = false;
+      consecutiveFailures++;
+      providerFailures++; // Track for RPC rotation
+      console.error(`[${lastCycleTime}] ❌ Cycle failed:`, err.message);
+      
+      // Don't crash - log and continue
+    }
+
+    // Calculate next interval with exponential backoff on failures
+    let nextInterval = POLL_INTERVAL_MS;
+    if (consecutiveFailures > 0) {
+      // Backoff: 5s, 10s, 20s, 30s max
+      nextInterval = Math.min(POLL_INTERVAL_MS * Math.pow(2, consecutiveFailures - 1), 30000);
+      console.log(`⏳ RPC issues detected, next cycle in ${nextInterval/1000}s (backoff)`);
+    }
+
+    // Schedule next cycle (only if still running)
+    if (autonomousLoopRunning) {
+      autonomousCycleTimer = setTimeout(runAutonomousCycle, nextInterval);
+    }
+  };
+  
+  // Store reference for API endpoints
+  runAutonomousCycleRef = runAutonomousCycle;
+
+  // Start first cycle after a short delay if AUTO_MODE was set
+  if (AUTO_MODE) {
+    setTimeout(runAutonomousCycle, 2000);
+  } else {
+    console.log("\n📋 Manual mode – type 'run' in UI terminal or use POST /autonomous/start");
+  }
 });
 
 // Keep process alive
@@ -556,16 +916,20 @@ server.on('error', (err) => {
 
 process.on('SIGINT', () => {
   console.log('\n👋 Shutting down...');
+  autonomousLoopRunning = false; // Stop autonomous loop
   stopMevListener();
   server.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n👋 Shutting down...');
+  console.log('\n👋 Shutting down gracefully...');
+  autonomousLoopRunning = false; // Stop autonomous loop
   stopMevListener();
-  server.close();
-  process.exit(0);
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
 
 process.on('unhandledRejection', (reason, promise) => {

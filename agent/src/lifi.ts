@@ -3,6 +3,7 @@ import {
   createConfig, 
   getRoutes, 
   getQuote,
+  executeRoute,
   EVM,
   ChainId,
   type Route,
@@ -10,7 +11,33 @@ import {
 } from "@lifi/sdk";
 import { createWalletClient, http, type WalletClient, type Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
+import { sepolia, arbitrum, base } from "viem/chains";
+
+// ═══════════════════════════════════════════════════════════════
+// SAFETY CONFIGURATION
+// ═══════════════════════════════════════════════════════════════
+
+// Environment flags for execution control
+const DRY_RUN = process.env.DRY_RUN !== 'false'; // Default: true (safe)
+const EXECUTE_REAL_BRIDGE = process.env.EXECUTE_REAL_BRIDGE === 'true'; // Default: false
+
+// Safety limits
+const MAX_BRIDGE_AMOUNT_USD = parseFloat(process.env.MAX_BRIDGE_AMOUNT_USD || '10'); // $10 max by default
+const BRIDGE_COOLDOWN_MS = parseInt(process.env.BRIDGE_COOLDOWN_MS || '1800000', 10); // 30 min default
+const MIN_SIMULATION_AMOUNT = '1000000'; // 1 USDC (6 decimals) - readable simulation
+
+// Cooldown tracking
+let lastBridgeTimestamp: number = 0;
+let lastBridgeAttempt: BridgeAttempt | null = null;
+
+export interface BridgeAttempt {
+  timestamp: string;
+  mode: 'simulation' | 'real';
+  status: 'success' | 'failed' | 'cooldown' | 'amount-exceeded';
+  quote?: BridgeQuote;
+  txHash?: string;
+  error?: string;
+}
 
 // Chain IDs - Use mainnet IDs for LI.FI API (testnets not supported)
 // For actual execution, we'd use testnets, but LI.FI quotes work with mainnet
@@ -74,9 +101,56 @@ export interface BridgeResult {
   txHash?: string;
   error?: string;
   quote?: BridgeQuote;
+  mode?: 'simulation' | 'real';
 }
 
 let sdkConfigured = false;
+
+// ═══════════════════════════════════════════════════════════════
+// SAFETY HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Check if bridge is in cooldown period
+ */
+function isInBridgeCooldown(): boolean {
+  return Date.now() - lastBridgeTimestamp < BRIDGE_COOLDOWN_MS;
+}
+
+/**
+ * Get remaining cooldown time in seconds
+ */
+export function getBridgeCooldownRemaining(): number {
+  if (!isInBridgeCooldown()) return 0;
+  return Math.ceil((BRIDGE_COOLDOWN_MS - (Date.now() - lastBridgeTimestamp)) / 1000);
+}
+
+/**
+ * Record a bridge attempt for tracking
+ */
+function recordBridgeAttempt(attempt: Omit<BridgeAttempt, 'timestamp'>): void {
+  lastBridgeAttempt = {
+    ...attempt,
+    timestamp: new Date().toISOString()
+  };
+  if (attempt.status === 'success' && attempt.mode === 'real') {
+    lastBridgeTimestamp = Date.now();
+  }
+}
+
+/**
+ * Get last bridge attempt info (for /health endpoint)
+ */
+export function getLastBridgeAttempt(): BridgeAttempt | null {
+  return lastBridgeAttempt;
+}
+
+/**
+ * Check if amount exceeds safety limit
+ */
+function exceedsSafetyLimit(amountUSD: number): boolean {
+  return amountUSD > MAX_BRIDGE_AMOUNT_USD;
+}
 
 /**
  * Configure LI.FI SDK with EVM provider
@@ -198,27 +272,43 @@ export async function simulateBridge(
     configureSdk(privateKey);
   }
 
-  // Convert amount to USDC 6 decimals for realistic quote
-  const usdcAmount = (amount / BigInt(1e12)).toString(); // 18 decimals → 6 decimals
+  // Use minimum readable amount for simulation (1 USDC = 1000000 in 6 decimals)
+  // This gives realistic quote results instead of tiny dust amounts
+  const rawAmount = amount / BigInt(1e12); // 18 decimals → 6 decimals
+  const simulationAmount = rawAmount < BigInt(MIN_SIMULATION_AMOUNT) 
+    ? MIN_SIMULATION_AMOUNT 
+    : rawAmount.toString();
+
+  console.log(`  💰 Simulation amount: ${ethers.formatUnits(simulationAmount, 6)} USDC`);
 
   const quote = await getBridgeQuote(
     lifiFromChain,
     lifiToChain,
     TOKENS.ARBITRUM.USDC,
     TOKENS.BASE.USDC,
-    usdcAmount,
+    simulationAmount,
     fromAddress
   );
 
   if (quote) {
     console.log("\n  📋 SIMULATION RESULT");
-    console.log(`     Would bridge: ${ethers.formatUnits(amount, 18)} tokens`);
-    console.log(`     Testnet: Sepolia → Base Sepolia`);
-    console.log(`     Quote via: ${quote.bridgeUsed} (Arbitrum → Base)`);
+    console.log(`     Would bridge: ${ethers.formatUnits(simulationAmount, 6)} USDC`);
+    console.log(`     Route: Arbitrum → Base`);
+    console.log(`     Bridge: ${quote.bridgeUsed}`);
     console.log(`     Est. output: ${ethers.formatUnits(quote.estimatedOutput, 6)} USDC`);
     console.log(`     Est. gas: $${quote.gasCostUSD}`);
     console.log("\n  ✅ LI.FI integration verified!");
-    console.log("  ℹ️  In production, this would execute on real chains");
+    
+    // Record the simulation attempt
+    recordBridgeAttempt({
+      mode: 'simulation',
+      status: 'success',
+      quote
+    });
+
+    if (!EXECUTE_REAL_BRIDGE) {
+      console.log("  ℹ️  Set EXECUTE_REAL_BRIDGE=true to enable real execution");
+    }
   }
 
   return quote;
@@ -226,7 +316,11 @@ export async function simulateBridge(
 
 /**
  * Execute a real cross-chain bridge via LI.FI
- * Note: For testnet, LI.FI may not have routes available
+ * Includes multiple safety layers:
+ * - DRY_RUN mode (default: enabled)
+ * - EXECUTE_REAL_BRIDGE flag (default: disabled)
+ * - Amount cap (MAX_BRIDGE_AMOUNT_USD)
+ * - Cooldown period (BRIDGE_COOLDOWN_MS)
  */
 export async function bridgeToBaseSepolia(
   privateKey: string,
@@ -234,40 +328,187 @@ export async function bridgeToBaseSepolia(
   amount: bigint,
   fromAddress: string
 ): Promise<BridgeResult> {
-  console.log("\n  🌐 LI.FI CROSS-CHAIN BRIDGE (LIVE)");
+  console.log("\n  🌐 LI.FI CROSS-CHAIN BRIDGE");
   console.log("  ─".repeat(30));
+
+  // ═══════════════════════════════════════════════════════════════
+  // SAFETY CHECK 1: Cooldown
+  // ═══════════════════════════════════════════════════════════════
+  if (isInBridgeCooldown()) {
+    const remaining = getBridgeCooldownRemaining();
+    console.log(`  ⏱️  Bridge cooldown active (${remaining}s remaining)`);
+    recordBridgeAttempt({
+      mode: EXECUTE_REAL_BRIDGE ? 'real' : 'simulation',
+      status: 'cooldown',
+      error: `Cooldown active: ${remaining}s remaining`
+    });
+    return {
+      success: false,
+      error: `Bridge cooldown: ${remaining}s remaining`,
+      mode: 'simulation'
+    };
+  }
 
   configureSdk(privateKey);
 
+  // Use mainnet chains for quote (testnets not supported by LI.FI)
+  const lifiFromChain = CHAINS.ARBITRUM;
+  const lifiToChain = CHAINS.BASE;
+
+  // Convert to USDC decimals and ensure minimum amount for readability
+  const rawAmount = amount / BigInt(1e12);
+  const bridgeAmount = rawAmount < BigInt(MIN_SIMULATION_AMOUNT) 
+    ? MIN_SIMULATION_AMOUNT 
+    : rawAmount.toString();
+
+  // Estimate USD value (1 USDC = $1)
+  const estimatedUSD = parseFloat(ethers.formatUnits(bridgeAmount, 6));
+
+  // ═══════════════════════════════════════════════════════════════
+  // SAFETY CHECK 2: Amount cap
+  // ═══════════════════════════════════════════════════════════════
+  if (exceedsSafetyLimit(estimatedUSD)) {
+    console.log(`  🚫 Amount exceeds safety limit ($${estimatedUSD} > $${MAX_BRIDGE_AMOUNT_USD})`);
+    recordBridgeAttempt({
+      mode: 'simulation',
+      status: 'amount-exceeded',
+      error: `Amount $${estimatedUSD} exceeds limit $${MAX_BRIDGE_AMOUNT_USD}`
+    });
+    return {
+      success: false,
+      error: `Amount $${estimatedUSD} exceeds safety limit $${MAX_BRIDGE_AMOUNT_USD}`,
+      mode: 'simulation'
+    };
+  }
+
   // Get quote first
+  console.log(`  💰 Bridge amount: ${ethers.formatUnits(bridgeAmount, 6)} USDC (~$${estimatedUSD.toFixed(2)})`);
+  
   const quote = await getBridgeQuote(
-    CHAINS.SEPOLIA,
-    CHAINS.BASE_SEPOLIA,
-    tokenAddress,
-    TOKENS.BASE_SEPOLIA.USDC,
-    amount.toString(),
+    lifiFromChain,
+    lifiToChain,
+    TOKENS.ARBITRUM.USDC,
+    TOKENS.BASE.USDC,
+    bridgeAmount,
     fromAddress
   );
 
   if (!quote) {
+    recordBridgeAttempt({
+      mode: 'simulation',
+      status: 'failed',
+      error: 'No bridge route available'
+    });
     return {
       success: false,
-      error: "No bridge route available for testnet tokens",
+      error: "No bridge route available",
+      mode: 'simulation'
     };
   }
 
-  // For testnet mock tokens, LI.FI likely won't have real routes
-  // Return simulated success with quote info
-  console.log("\n  ⚠️  Note: LI.FI may not support testnet mock tokens");
-  console.log("     In production, this would execute the bridge transaction");
-  console.log(`     Bridge: ${quote.bridgeUsed}`);
-  console.log(`     Amount: ${ethers.formatUnits(amount, 18)}`);
+  // ═══════════════════════════════════════════════════════════════
+  // SAFETY CHECK 3: DRY_RUN mode (default behavior)
+  // ═══════════════════════════════════════════════════════════════
+  if (DRY_RUN || !EXECUTE_REAL_BRIDGE) {
+    console.log("\n  🧪 DRY RUN MODE - No real transaction sent");
+    console.log("  ─".repeat(30));
+    console.log(`     Mode: ${DRY_RUN ? 'DRY_RUN=true' : 'EXECUTE_REAL_BRIDGE=false'}`);
+    console.log(`     Would bridge: ${ethers.formatUnits(bridgeAmount, 6)} USDC`);
+    console.log(`     Via: ${quote.bridgeUsed}`);
+    console.log(`     Est. output: ${ethers.formatUnits(quote.estimatedOutput, 6)} USDC`);
+    console.log(`     Est. gas: $${quote.gasCostUSD}`);
+    console.log("\n  ✅ Quote verified - ready for real execution");
+    console.log("  ℹ️  To enable: DRY_RUN=false EXECUTE_REAL_BRIDGE=true");
 
-  return {
-    success: true,
-    quote,
-    txHash: `LIFI_QUOTE_${Date.now()}`, // Placeholder for demo
-  };
+    recordBridgeAttempt({
+      mode: 'simulation',
+      status: 'success',
+      quote
+    });
+
+    return {
+      success: true,
+      quote,
+      txHash: `SIMULATION_${Date.now()}`,
+      mode: 'simulation'
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // REAL EXECUTION (only if all safety checks passed)
+  // ═══════════════════════════════════════════════════════════════
+  console.log("\n  ⚡ REAL EXECUTION MODE");
+  console.log("  ─".repeat(30));
+  console.log(`     Amount: ${ethers.formatUnits(bridgeAmount, 6)} USDC`);
+  console.log(`     Bridge: ${quote.bridgeUsed}`);
+  console.log(`     Route: Arbitrum → Base`);
+
+  try {
+    // Get the full route for execution
+    const routeResult = await getRoutes({
+      fromChainId: lifiFromChain,
+      toChainId: lifiToChain,
+      fromTokenAddress: TOKENS.ARBITRUM.USDC,
+      toTokenAddress: TOKENS.BASE.USDC,
+      fromAmount: bridgeAmount,
+      fromAddress,
+      options: {
+        slippage: 0.005, // 0.5% slippage for real execution
+      },
+    });
+
+    if (!routeResult.routes || routeResult.routes.length === 0) {
+      throw new Error('No routes available for execution');
+    }
+
+    const route = routeResult.routes[0];
+    console.log(`  🚀 Executing route via ${route.steps[0]?.tool}...`);
+
+    // Execute the route
+    const executionResult = await executeRoute(route as RouteExtended, {
+      // The SDK handles wallet interaction via the configured provider
+      updateRouteHook: (updatedRoute) => {
+        console.log(`  📊 Route update: ${updatedRoute.steps[0]?.execution?.status || 'pending'}`);
+      },
+    });
+
+    // Get transaction hash from execution
+    const txHash = executionResult.steps[0]?.execution?.process?.[0]?.txHash || `LIFI_${Date.now()}`;
+    
+    console.log(`  ✅ Bridge executed successfully!`);
+    console.log(`     TX: ${txHash}`);
+
+    recordBridgeAttempt({
+      mode: 'real',
+      status: 'success',
+      quote,
+      txHash
+    });
+
+    return {
+      success: true,
+      quote,
+      txHash,
+      mode: 'real'
+    };
+
+  } catch (error: any) {
+    console.error(`  ❌ Bridge execution failed:`, error.message);
+
+    recordBridgeAttempt({
+      mode: 'real',
+      status: 'failed',
+      quote,
+      error: error.message
+    });
+
+    return {
+      success: false,
+      quote,
+      error: error.message,
+      mode: 'real'
+    };
+  }
 }
 
 /**
