@@ -201,7 +201,14 @@ export async function addLiquidity(amount: number): Promise<LiquidityResponse> {
   if (!res.ok) {
     throw new Error(`Add liquidity failed: ${res.statusText}`);
   }
-  return await res.json();
+  const data = await res.json();
+  
+  // Check if backend returned failure in JSON
+  if (data.status === 'failed' || data.error) {
+    throw new Error(data.error || 'Liquidity addition failed');
+  }
+  
+  return data;
 }
 
 /**
@@ -216,7 +223,14 @@ export async function removeLiquidity(amount: number): Promise<LiquidityResponse
   if (!res.ok) {
     throw new Error(`Remove liquidity failed: ${res.statusText}`);
   }
-  return await res.json();
+  const data = await res.json();
+  
+  // Check if backend returned failure in JSON
+  if (data.status === 'failed' || data.error) {
+    throw new Error(data.error || 'Liquidity removal failed');
+  }
+  
+  return data;
 }
 
 /**
