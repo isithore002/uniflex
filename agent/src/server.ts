@@ -39,8 +39,15 @@ let lastCycleSuccess = true;
 let autonomousLoopRunning = false;
 let autonomousCycleTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Middleware
-app.use(cors());
+// Middleware - Enable CORS for frontend
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'https://uniflex-buds.vercel.app',
+    /\.vercel\.app$/ // Allow any Vercel preview deployments
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // ═══════════════════════════════════════════════════════════════

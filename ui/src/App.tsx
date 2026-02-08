@@ -5,6 +5,8 @@ import type { AgentState, TimelineEntry } from './lib/agent'
 import { useUnifluxEns } from './hooks/useEns'
 import { useAgentStatus } from './hooks/useAgentStatus'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 // Helper to render line with clickable links
 function renderLineWithLinks(line: string): React.ReactNode {
   // Match URLs (https://...)
@@ -108,7 +110,7 @@ function App() {
         
         // Check for autonomous mode via /status endpoint
         try {
-          const statusRes = await fetch('http://localhost:3001/status')
+          const statusRes = await fetch(`${API_URL}/status`)
           if (statusRes.ok) {
             const status = await statusRes.json()
             if (status.autonomous?.running) {
@@ -253,7 +255,7 @@ function App() {
       case 'run':
         addOutput('[....] Starting autonomous mode...')
         try {
-          const res = await fetch('http://localhost:3001/autonomous/start', { method: 'POST' })
+          const res = await fetch(`${API_URL}/autonomous/start`, { method: 'POST' })
           const data = await res.json()
           if (data.success) {
             addOutput([
@@ -278,7 +280,7 @@ function App() {
       case 'stop':
         addOutput('[....] Stopping autonomous mode...')
         try {
-          const res = await fetch('http://localhost:3001/autonomous/stop', { method: 'POST' })
+          const res = await fetch(`${API_URL}/autonomous/stop`, { method: 'POST' })
           const data = await res.json()
           if (data.success) {
             addOutput([
@@ -431,7 +433,7 @@ function App() {
       case 'test-sandwich':
         addOutput('[....] Injecting synthetic price spikes...')
         try {
-          const res = await fetch('http://localhost:3001/test/volatility', { 
+          const res = await fetch(`${API_URL}/test/volatility`, { 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ basePrice: 1.0 })
@@ -468,7 +470,7 @@ function App() {
       case 'reset-volatility':
         addOutput('[....] Resetting volatility to real observations...')
         try {
-          const res = await fetch('http://localhost:3001/test/reset-volatility', { 
+          const res = await fetch(`${API_URL}/test/reset-volatility`, { 
             method: 'POST'
           })
           const data = await res.json()
@@ -491,7 +493,7 @@ function App() {
       case 'check-volatility':
         addOutput('[....] Checking current volatility...')
         try {
-          const res = await fetch('http://localhost:3001/test/volatility')
+          const res = await fetch(`${API_URL}/test/volatility`)
           const data = await res.json()
           if (data.success) {
             addOutput([
