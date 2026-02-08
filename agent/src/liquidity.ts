@@ -41,25 +41,23 @@ const STRATEGY_PARAMS = {
 
 /**
  * Add liquidity to the Uniswap v4 pool
- * This is an agent-controlled operation - UI cannot set parameters
+ * Can accept custom amount or use default strategy amount
  */
 export async function addLiquidity(
   signer: ethers.Signer,
   liquidityHelperAddress: string,
   token0Address: string,
   token1Address: string,
-  source: string = "agent"
+  source: string = "agent",
+  customAmount?: bigint
 ): Promise<LiquidityResult> {
-  // Log source for judges
-  if (source === "ui") {
-    console.log("  📋 UI requested execution — agent parameters unchanged");
-  }
-
+  const amountToAdd = customAmount || STRATEGY_PARAMS.liquidityAmount;
+  
   try {
-    console.log("\n💧 ADD LIQUIDITY (Agent-Controlled)");
+    console.log("\n💧 ADD LIQUIDITY");
     console.log(`  Source: ${source}`);
     console.log(`  Tick Range: [${STRATEGY_PARAMS.tickLower}, ${STRATEGY_PARAMS.tickUpper}]`);
-    console.log(`  Liquidity: ${ethers.formatEther(STRATEGY_PARAMS.liquidityAmount)} units`);
+    console.log(`  Liquidity: ${ethers.formatEther(amountToAdd)} units`);
 
     // Verify connection first
     const signerAddress = await Promise.race([
@@ -133,7 +131,7 @@ export async function addLiquidity(
         poolKey,
         STRATEGY_PARAMS.tickLower,
         STRATEGY_PARAMS.tickUpper,
-        STRATEGY_PARAMS.liquidityAmount
+        amountToAdd
       ),
       new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Transaction submission timeout')), 15000)
@@ -153,7 +151,7 @@ export async function addLiquidity(
       action: "ADD_LIQUIDITY",
       txHash: receipt.hash,
       blockNumber: receipt.blockNumber,
-      amount: ethers.formatEther(STRATEGY_PARAMS.liquidityAmount),
+      amount: ethers.formatEther(amountToAdd),
       source
     };
 

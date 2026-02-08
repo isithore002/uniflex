@@ -489,9 +489,10 @@ app.post("/agent/liquidity/add", async (_, res) => {
  * Agent-controlled liquidity removal
  * UI cannot modify parameters - triggers agent execution
  */
-app.post("/agent/liquidity/remove", async (_, res) => {
+app.post("/agent/liquidity/remove", async (req, res) => {
   console.log("\n🔥 POST /agent/liquidity/remove");
-  console.log("  📋 UI requested execution — agent parameters unchanged");
+  const requestedAmount = req.body?.amount;
+  console.log(`  📋 UI requested: ${requestedAmount} ETH`);
 
   try {
     const signer = getSigner();
@@ -510,7 +511,8 @@ app.post("/agent/liquidity/remove", async (_, res) => {
       liquidityHelperAddress,
       token0,
       token1,
-      "ui"  // Source: UI trigger
+      "ui",  // Source: UI trigger
+      requestedAmount ? ethers.parseEther(requestedAmount.toString()) : undefined
     );
 
     res.json({
