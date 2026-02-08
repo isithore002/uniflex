@@ -26,12 +26,11 @@ out/
 cache/
 broadcast/
 artifacts/
-lib/
+contracts/**/lib/
 **/out/
 **/cache/
 **/broadcast/
 **/artifacts/
-**/lib/
 
 # =====================
 # OS / Editor
